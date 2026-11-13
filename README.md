@@ -118,13 +118,25 @@ Depois, configure-o de **uma** destas formas (nunca no código):
 Se o endereço da API mudar, ele pode ser trocado sem alterar o código pela variável
 `ECONOMIZA_AL_BASE_URL`.
 
+## Erros comuns
+
+| Mensagem no app | O que significa | O que fazer |
+|---|---|---|
+| Faixa amarela "Modo demonstração" | O token não foi encontrado | Configure `ECONOMIZA_AL_TOKEN` (veja acima) |
+| "O token da API foi recusado" (HTTP 401/403) | Token inválido ou revogado | Peça um novo token à SEFAZ-AL |
+| "O serviço da SEFAZ-AL está fora do ar…" (HTTP 500, `SHORTCIRCUIT`) | O *gateway* da SEFAZ cortou o acesso ao serviço, que está falhando ou sobrecarregado | Nada a corrigir no app: espere e tente mais tarde. O app já repete a consulta 2 vezes antes de desistir |
+| "Não foi possível conectar…" | Sem resposta da API (rede ou tempo esgotado) | Tente mais tarde |
+
+A API funciona por `http://`: na porta HTTPS, o servidor apresenta um certificado de outro
+domínio, então não troque o endereço para `https://`.
+
 ## Testes
 
 ```bash
 pytest -q
 ```
 
-São 28 testes, todos sem acesso à rede: cliente da API com respostas simuladas (paginação,
+São 30 testes, todos sem acesso à rede: cliente da API com respostas simuladas (paginação,
 erros HTTP, timeout), regras da cesta, mapa/GeoJSON e testes de ponta a ponta das páginas com
 `streamlit.testing` em modo demonstração. O GitHub Actions roda a suíte a cada push
 (Python 3.10 e 3.12).

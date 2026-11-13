@@ -7,6 +7,7 @@ O token de acesso é pessoal e deve ser solicitado à SEFAZ-AL (api@sefaz.al.gov
 from __future__ import annotations
 
 import os
+import time
 from typing import Any
 
 import pandas as pd
@@ -32,6 +33,8 @@ TIPOS_COMBUSTIVEL: dict[str, int] = {
 DIAS_MAXIMO = 10
 REGISTROS_POR_PAGINA = 5000
 MAX_PAGINAS = 20  # trava de segurança contra laços infinitos
+TENTATIVAS = 3  # 1 tentativa + 2 repetições em falhas temporárias do servidor
+ERROS_TEMPORARIOS = {500, 502, 503, 504}
 
 COLUNAS = {
     "produto.codigo": "codigo_produto",
@@ -106,6 +109,19 @@ def filtrar_bairro(df: pd.DataFrame, bairro: str | None) -> pd.DataFrame:
     return df[df["bairro"].map(normalizar).str.contains(alvo, regex=False)]
 
 
+def _mensagem_erro(status: int, corpo: str) -> str:
+    """Traduz o erro HTTP da API para uma mensagem que o usuário entende."""
+    detalhe = f"(HTTP {status}: {corpo[:200]})"
+    if status in (401, 403):
+        return f"O token da API foi recusado: confira ECONOMIZA_AL_TOKEN ou peça um novo à SEFAZ-AL. {detalhe}"
+    if status in ERROS_TEMPORARIOS:
+        return (
+            "O serviço da SEFAZ-AL está fora do ar ou sobrecarregado no momento. O problema é "
+            f"do lado do servidor, não do app: tente novamente mais tarde. {detalhe}"
+        )
+    return f"A API recusou a consulta. {detalhe}"
+
+
 class EconomizaClient:
     def __init__(
         self,
@@ -122,19 +138,30 @@ class EconomizaClient:
         self.session.headers.update({"AppToken": token, "Content-Type": "application/json"})
 
     def _post(self, endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """POST com novas tentativas (1 s, 2 s) quando o servidor falha temporariamente."""
         url = f"{self.base_url}/{endpoint}"
-        try:
-            resp = self.session.post(url, json=payload, timeout=self.timeout)
-        except requests.RequestException as exc:
-            raise EconomizaAPIError(f"Falha de conexão com a API: {exc}") from exc
-        if resp.status_code != 200:
-            raise EconomizaAPIError(
-                f"API respondeu HTTP {resp.status_code}: {resp.text[:300]}"
-            )
-        try:
-            return resp.json()
-        except ValueError as exc:
-            raise EconomizaAPIError("A API retornou uma resposta que não é JSON.") from exc
+        for tentativa in range(1, TENTATIVAS + 1):
+            ultima = tentativa == TENTATIVAS
+            try:
+                resp = self.session.post(url, json=payload, timeout=self.timeout)
+            except (requests.ConnectionError, requests.Timeout) as exc:
+                if ultima:
+                    raise EconomizaAPIError(
+                        "Não foi possível conectar à API da SEFAZ-AL (sem resposta ou "
+                        "tempo esgotado). Tente novamente em alguns minutos."
+                    ) from exc
+            except requests.RequestException as exc:
+                raise EconomizaAPIError(f"Falha de conexão com a API: {exc}") from exc
+            else:
+                if resp.status_code == 200:
+                    try:
+                        return resp.json()
+                    except ValueError as exc:
+                        raise EconomizaAPIError("A API retornou uma resposta que não é JSON.") from exc
+                if resp.status_code not in ERROS_TEMPORARIOS or ultima:
+                    raise EconomizaAPIError(_mensagem_erro(resp.status_code, resp.text))
+            time.sleep(2 ** (tentativa - 1))
+        raise AssertionError("inalcançável")
 
     def _paginar(self, endpoint: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
         """Percorre todas as páginas. Usa ``totalPaginas`` quando a API informa."""

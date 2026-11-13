@@ -77,12 +77,38 @@ def test_paginacao_sem_total_paginas_para_em_pagina_incompleta():
     assert len(df) == REGISTROS_POR_PAGINA + 1 and len(s.payloads) == 2
 
 
+@pytest.fixture(autouse=True)
+def sem_espera(monkeypatch):
+    monkeypatch.setattr("economiza.api.time.sleep", lambda s: None)
+
+
 @pytest.mark.parametrize("resposta", [Resp(status=401, body="não autorizado"),
-                                      Resp(body=ValueError("html")),
-                                      requests.Timeout("lento")])
+                                      Resp(body=ValueError("html"))])
 def test_erros_viram_economiza_api_error(resposta):
-    c, _ = cliente([resposta])
+    c, s = cliente([resposta])
     with pytest.raises(EconomizaAPIError):
+        c.pesquisar_combustivel(1, 2704302)
+    assert len(s.payloads) == 1  # erro definitivo: não repete
+
+
+def test_erro_500_repete_e_recupera():
+    shortcircuit = '{"status":500,"exception":"com.netflix.zuul.exception.ZuulException","message":"SHORTCIRCUIT"}'
+    c, s = cliente([Resp(status=500, body=shortcircuit), requests.Timeout("lento"),
+                    Resp(body={"totalPaginas": 1, "conteudo": [registro()]})])
+    assert len(c.pesquisar_combustivel(1, 2704302)) == 1
+    assert len(s.payloads) == 3
+
+
+def test_erro_500_persistente_explica_que_e_do_servidor():
+    c, s = cliente([Resp(status=500, body="SHORTCIRCUIT")] * 3)
+    with pytest.raises(EconomizaAPIError, match="lado do servidor"):
+        c.pesquisar_combustivel(1, 2704302)
+    assert len(s.payloads) == 3
+
+
+def test_token_recusado_tem_mensagem_propria():
+    c, _ = cliente([Resp(status=403, body="forbidden")])
+    with pytest.raises(EconomizaAPIError, match="token"):
         c.pesquisar_combustivel(1, 2704302)
 
 
