@@ -1,0 +1,5 @@
+streamlit>=1.36,<2
+pandas>=2.1
+folium>=0.17
+requests>=2.31
+Unidecode>=1.3
