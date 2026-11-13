@@ -135,7 +135,7 @@ def test_fluxo_completo_com_dados_demo():
     partes = []
     for item in cb.ITENS_REGIAO_2:
         for ncm in item.ncms:
-            d = DemoClient().pesquisar_produto(2704302, ncm=ncm)
+            d = DemoClient().pesquisar_produto(2704302, descricao=item.termos[0], ncm=ncm)
             if not d.empty:
                 partes.append(d.assign(item=item.nome))
     of = cb.classificar_ofertas(pd.concat(partes, ignore_index=True))
@@ -147,3 +147,16 @@ def test_fluxo_completo_com_dados_demo():
                                 cb.sensibilidade(cb.matriz_cobertura(of, ITENS, 6)), 6, 12,
                                 cb.REFERENCIA_DIEESE["MACEIO"])
     assert any("DIEESE" in f for f in frases)
+
+
+def test_toda_consulta_leva_termo_e_ncm():
+    consultas = cb.consultas_api()
+    assert len(consultas) == 19
+    assert all(termo and len(ncm) == 8 for _, termo, ncm in consultas)
+    assert {i for i, _, _ in consultas} == set(ITENS)
+
+
+def test_remover_duplicadas_entre_termos():
+    linha = {"item": "Carne", "cnpj": "1", "descricao": "PATINHO COXAO KG",
+             "data_venda": pd.Timestamp("2026-11-01"), "valor_declarado": 40.0}
+    assert len(cb.remover_duplicadas(pd.DataFrame([linha, linha]))) == 1

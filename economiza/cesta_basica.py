@@ -46,39 +46,64 @@ class ItemCesta:
     exige: str | None = None  # regex que a descrição precisa conter
     proibe: str | None = None  # regex que exclui a descrição
     fatores_kg_para_dz: dict[str, float] = field(default_factory=dict)  # só banana
+    # Termos de busca enviados à API junto com o NCM (a API não aceita pesquisar só pelo NCM).
+    termos: tuple[str, ...] = ()
 
 
 # Região 2 do Decreto-Lei 399/1938 (inclui Alagoas). Ordem igual à tabela do DIEESE.
 ITENS_REGIAO_2: tuple[ItemCesta, ...] = (
     ItemCesta("Carne", ("02013000", "02023000"), 4.5, "kg", "4,5 kg",
               "Carne bovina de primeira: coxão mole, coxão duro ou patinho, sem osso",
-              exige=r"PATINHO|\bCO?X(AO|\.)? ?(MOLE|DURO)|\bCHA (DE )?(DENTRO|FORA)"),
+              exige=r"PATINHO|\bCO?X(AO|\.)? ?(MOLE|DURO)|\bCHA (DE )?(DENTRO|FORA)",
+              termos=("PATINHO", "COXAO", "CHA")),
     ItemCesta("Leite", ("04012010",), 6.0, "L", "6,0 L", "Leite integral UHT",
-              exige=r"INTEGRAL", proibe=r"SEMI|DESNAT|\bPO\b|CONDENS|FERMENT|ACHOC"),
+              exige=r"INTEGRAL", proibe=r"SEMI|DESNAT|\bPO\b|CONDENS|FERMENT|ACHOC",
+              termos=("LEITE",)),
     ItemCesta("Feijão", ("07133399", "07133319"), 4.5, "kg", "4,5 kg", "Feijão carioca",
-              exige=r"CARIOC"),
+              exige=r"CARIOC",
+              termos=("FEIJAO",)),
     ItemCesta("Arroz", ("10063021",), 3.6, "kg", "3,6 kg",
               "Arroz agulhinha tipo 1 (branco, não parboilizado)",
-              proibe=r"PARBO|INTEGRAL|ARBORIO|JAPON|CATETO|NEGRO|VERMELHO|7 GRAOS"),
+              proibe=r"PARBO|INTEGRAL|ARBORIO|JAPON|CATETO|NEGRO|VERMELHO|7 GRAOS",
+              termos=("ARROZ",)),
     ItemCesta("Farinha", ("11062000",), 3.0, "kg", "3,0 kg", "Farinha de mandioca",
-              proibe=r"TAPIOCA|GOMA|POLVILHO|CARIMA|PUBA|FECULA"),
+              proibe=r"TAPIOCA|GOMA|POLVILHO|CARIMA|PUBA|FECULA",
+              termos=("FARINHA",)),
     ItemCesta("Tomate", ("07020000",), 12.0, "kg", "12,0 kg", "Tomate (comum)",
-              proibe=r"CEREJA|GRAPE|SWEET|MOLHO|EXTRATO|POLPA|SECO"),
+              proibe=r"CEREJA|GRAPE|SWEET|MOLHO|EXTRATO|POLPA|SECO",
+              termos=("TOMATE",)),
     ItemCesta("Pão francês", ("19059090",), 6.0, "kg", "6,0 kg", "Pão francês (carioquinha)",
-              exige=r"\bPAO\b.*(FRANC|CARIOQ|\bSAL\b)|CARIOQUINHA"),
+              exige=r"\bPAO\b.*(FRANC|CARIOQ|\bSAL\b)|CARIOQUINHA",
+              termos=("PAO",)),
     ItemCesta("Café em pó", ("09012100",), 0.3, "kg", "300 g", "Café torrado e moído",
-              proibe=r"GRAO|CAPSULA|SACHE|DESCAF|SOLUVEL"),
+              proibe=r"GRAO|CAPSULA|SACHE|DESCAF|SOLUVEL",
+              termos=("CAFE",)),
     ItemCesta("Banana", ("08039000",), 7.5, "dz", "90 unid (7,5 dz)", "Banana prata ou nanica",
               exige=r"PRATA|NANICA|CATURRA|D.?AGUA",
-              fatores_kg_para_dz={"PRATA": 1.2, "NANICA": 1.8, "CATURRA": 1.8, "AGUA": 1.8}),
+              fatores_kg_para_dz={"PRATA": 1.2, "NANICA": 1.8, "CATURRA": 1.8, "AGUA": 1.8},
+              termos=("BANANA",)),
     ItemCesta("Açúcar", ("17019900", "17011400"), 3.0, "kg", "3,0 kg", "Açúcar cristal",
-              exige=r"CRISTAL"),
+              exige=r"CRISTAL",
+              termos=("ACUCAR",)),
     ItemCesta("Óleo", ("15079011",), round(0.75 / DENSIDADE_OLEO, 3), "L", "750 g (≈ 0,815 L)",
-              "Óleo de soja refinado", exige=r"SOJA"),
+              "Óleo de soja refinado", exige=r"SOJA",
+              termos=("OLEO",)),
     ItemCesta("Manteiga", ("04051000",), 0.75, "kg", "750 g", "Manteiga",
-              proibe=r"MARGARINA|GARRAFA|CACAU|AMENDOIM"),
+              proibe=r"MARGARINA|GARRAFA|CACAU|AMENDOIM",
+              termos=("MANTEIGA",)),
 )
 ITENS_POR_NOME = {i.nome: i for i in ITENS_REGIAO_2}
+
+
+def consultas_api() -> list[tuple[str, str, str]]:
+    """(item, termo, ncm) de cada consulta à API. Uma oferta pode vir em mais de uma
+    consulta (ex.: termos da carne), por isso o resultado passa por ``remover_duplicadas``."""
+    return [(i.nome, termo, ncm) for i in ITENS_REGIAO_2 for termo in i.termos for ncm in i.ncms]
+
+
+def remover_duplicadas(ofertas: pd.DataFrame) -> pd.DataFrame:
+    chave = [c for c in ("item", "cnpj", "descricao", "data_venda", "valor_declarado") if c in ofertas]
+    return ofertas.drop_duplicates(chave).reset_index(drop=True) if not ofertas.empty else ofertas
 
 
 # --------------------------------------------------------------------------------------

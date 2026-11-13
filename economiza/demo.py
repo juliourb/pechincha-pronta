@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 
 from .api import normalizar_resultado
-from .municipios import MUNICIPIOS_AL
+from .municipios import MUNICIPIOS_AL, normalizar
 
 _CENTRO = (-9.6498, -35.7089)  # posição ilustrativa (Maceió) usada para todos os municípios
 _PRECO_COMBUSTIVEL = {1: 6.29, 2: 6.49, 3: 4.59, 4: 6.09, 5: 6.19, 6: 4.99}
@@ -137,11 +137,12 @@ class DemoClient:
     def pesquisar_produto(self, codigo_ibge: int, descricao: str | None = None,
                           ncm: str | None = None, gtin: str | None = None,
                           dias: int = 7) -> pd.DataFrame:
-        if descricao is None and ncm in _OFERTAS_NCM:
-            return self._cesta_basica(codigo_ibge, ncm, dias)
+        termo = normalizar(descricao)
+        if termo in _OFERTAS_CHURRASCO:
+            return self._churrasco(codigo_ibge, termo, ncm, dias)
+        if ncm in _OFERTAS_NCM:  # cesta básica: como a API, devolve só o que contém o termo
+            return self._cesta_basica(codigo_ibge, ncm, dias, termo)
         descricao = (descricao or "PRODUTO").upper()
-        if descricao in _OFERTAS_CHURRASCO:
-            return self._churrasco(codigo_ibge, descricao, ncm, dias)
         base, unidade = _PRECO_PRODUTO.get(descricao, (10.0, "UN"))
         registros = []
         for i in range(1, 11):
@@ -160,7 +161,7 @@ class DemoClient:
                 })
         return normalizar_resultado(registros)
 
-    def _cesta_basica(self, codigo_ibge: int, ncm: str, dias: int) -> pd.DataFrame:
+    def _cesta_basica(self, codigo_ibge: int, ncm: str, dias: int, termo: str = "") -> pd.DataFrame:
         registros = []
         for i in range(1, 16):
             if i == 15 and ncm != "19059090":  # a loja 15 é uma padaria: só vende pão
@@ -172,6 +173,8 @@ class DemoClient:
                 continue
             prefixo = "PADARIA" if i == 15 else "MERCADO"
             for j, (desc, unidade, preco) in enumerate(_OFERTAS_NCM[ncm]):
+                if termo and termo not in desc:
+                    continue
                 if j > 0 and r.random() < 0.35:
                     continue
                 valor = round(preco * fator_loja * r.uniform(0.95, 1.06), 2)

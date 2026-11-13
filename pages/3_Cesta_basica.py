@@ -64,14 +64,17 @@ if consultar:
 
 if "cesta_basica" not in st.session_state:
     st.info("Escolha o município e clique em **Calcular a cesta**. A consulta faz uma busca por "
-            "código NCM (15 códigos) e pode levar alguns segundos.")
+            "termo e código NCM (19 consultas) e pode levar alguns segundos.")
     rodape()
     st.stop()
 
 consulta = st.session_state["cesta_basica"]
 if consulta["falhas"]:
-    st.warning("Não foi possível consultar: " + "; ".join(consulta["falhas"]) +
-               ". Esses itens aparecem como ausentes.")
+    itens_falhos = sorted({f.split(" (")[0] for f in consulta["falhas"]})
+    st.warning(f"{len(consulta['falhas'])} consulta(s) à API falharam ({', '.join(itens_falhos)}). "
+               "Os itens sem nenhuma resposta aparecem como ausentes.")
+    with st.expander("Ver as mensagens da API"):
+        st.code("\n".join(consulta["falhas"]), language=None)
 ofertas = filtrar_bairro(consulta["ofertas"], consulta["bairro"])
 if ofertas.empty or not (ofertas["motivo"] == "ok").any():
     st.error("Nenhuma oferta válida encontrada. Tente outro município, bairro ou período.")

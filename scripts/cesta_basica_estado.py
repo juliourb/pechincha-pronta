@@ -13,7 +13,7 @@ Uso:
     python scripts/cesta_basica_estado.py --todos --dias 7 --saida resultados/
 
 Sem ``ECONOMIZA_AL_TOKEN`` o script roda com os dados FICTÍCIOS do modo demonstração.
-São ~17 consultas por município (~1.700 para o estado): use ``--pausa`` para não
+São 19 consultas por município (1.938 para o estado): use ``--pausa`` para não
 sobrecarregar a API da SEFAZ.
 """
 
@@ -21,34 +21,23 @@ from __future__ import annotations
 
 import argparse
 import sys
-import time
 from pathlib import Path
 
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from economiza import EconomizaAPIError, obter_cliente  # noqa: E402
+from economiza import coleta, obter_cliente  # noqa: E402
 from economiza import cesta_basica as cb  # noqa: E402
 from economiza.mapa import para_geojson  # noqa: E402
 from economiza.municipios import MUNICIPIOS_AL, NOMES_MUNICIPIOS, codigo_ibge, normalizar  # noqa: E402
 
 
 def baixar_municipio(cliente, ibge: int, dias: int, pausa: float) -> pd.DataFrame:
-    partes = []
-    for item in cb.ITENS_REGIAO_2:
-        for ncm in item.ncms:
-            try:
-                df = cliente.pesquisar_produto(ibge, ncm=ncm, dias=dias)
-            except EconomizaAPIError as erro:
-                print(f"    ! {item.nome} (NCM {ncm}): {erro}", file=sys.stderr)
-                df = pd.DataFrame()
-            if not df.empty:
-                partes.append(df.assign(item=item.nome))
-            time.sleep(pausa)
-    if not partes:
-        return pd.DataFrame()
-    return cb.classificar_ofertas(pd.concat(partes, ignore_index=True))
+    ofertas, falhas = coleta.baixar_municipio(cliente, ibge, dias, pausa)
+    for falha in falhas:
+        print(f"    ! {falha}", file=sys.stderr)
+    return cb.classificar_ofertas(ofertas) if not ofertas.empty else ofertas
 
 
 def main(argv: list[str] | None = None) -> int:

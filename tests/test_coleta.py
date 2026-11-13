@@ -23,7 +23,7 @@ def test_arquivos_e_manifesto(pasta):
     for nome in ("ofertas.parquet", "lojas.parquet", "municipios.parquet", "manifesto.json", "coletas.json", "resumo.md"):
         assert (pasta / nome).exists(), nome
     m = json.loads((pasta / "manifesto.json").read_text(encoding="utf-8"))
-    assert m["tag"] == "coleta-2026-11-03" and m["consultas"] == 3 * 15 and m["demo"] is True
+    assert m["tag"] == "coleta-2026-11-03" and m["consultas"] == 3 * 19 and m["demo"] is True
     assert m["arquivos"]["ofertas"]["linhas"] == len(pd.read_parquet(pasta / "ofertas.parquet"))
     assert m["arquivos"]["ofertas"]["bytes"] == (pasta / "ofertas.parquet").stat().st_size
     assert m["estado"]["municipios_com_dados"] == 3
@@ -88,3 +88,21 @@ def test_dias_desde_ultima_coleta_ignora_demo():
               {"data_coleta": (hoje - pd.Timedelta(days=2)).date().isoformat(), "demo": True}]
     assert col.dias_desde_ultima_coleta(indice) == 15
     assert col.dias_desde_ultima_coleta([]) is None
+
+
+def test_coleta_envia_termo_e_ncm_e_registra_a_mensagem_de_erro():
+    from economiza.api import EconomizaAPIError
+
+    class ClienteFalso:
+        def __init__(self):
+            self.chamadas = []
+
+        def pesquisar_produto(self, codigo_ibge, descricao=None, ncm=None, gtin=None, dias=7):
+            self.chamadas.append((descricao, ncm))
+            raise EconomizaAPIError("A API recusou a consulta. (HTTP 400: descricao obrigatoria)")
+
+    cliente = ClienteFalso()
+    ofertas, falhas = col.baixar_municipio(cliente, 2704302, 10)
+    assert ofertas.empty and len(cliente.chamadas) == 19
+    assert all(descricao and ncm for descricao, ncm in cliente.chamadas)
+    assert "HTTP 400" in falhas[0]

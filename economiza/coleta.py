@@ -1,7 +1,7 @@
 """Coleta estadual da cesta básica e o seu armazenamento em Parquet.
 
 Fluxo:
-1. ``coletar`` consulta a API para cada município e item (≈ 17 consultas por município);
+1. ``coletar`` consulta a API para cada município e item (19 consultas por município: termo + NCM de cada item);
 2. ``montar_tabelas`` gera três tabelas: ``ofertas`` (cada oferta, já classificada),
    ``lojas`` (a cesta por estabelecimento) e ``municipios`` (indicadores);
 3. ``salvar`` grava os Parquet, um ``manifesto.json`` (linhas e bytes de cada arquivo) e
@@ -55,20 +55,20 @@ def hoje() -> str:
 
 # ------------------------------------------------------------------------------------ coleta
 def baixar_municipio(cliente, codigo_ibge: int, dias: int, pausa: float = 0.0) -> tuple[pd.DataFrame, list[str]]:
-    """Todas as ofertas dos NCMs da cesta básica num município. Devolve (ofertas, falhas)."""
+    """Ofertas da cesta básica num município (termo + NCM de cada item). Devolve (ofertas, falhas)."""
     partes, falhas = [], []
-    for item in cb.ITENS_REGIAO_2:
-        for ncm in item.ncms:
-            try:
-                df = cliente.pesquisar_produto(codigo_ibge, ncm=ncm, dias=dias)
-            except EconomizaAPIError:
-                falhas.append(f"{codigo_ibge}:{ncm}")
-                df = pd.DataFrame()
-            if not df.empty:
-                partes.append(df.assign(item=item.nome))
-            if pausa:
-                time.sleep(pausa)
-    return (pd.concat(partes, ignore_index=True) if partes else pd.DataFrame()), falhas
+    for item, termo, ncm in cb.consultas_api():
+        try:
+            df = cliente.pesquisar_produto(codigo_ibge, descricao=termo, ncm=ncm, dias=dias)
+        except EconomizaAPIError as erro:
+            falhas.append(f"{codigo_ibge}:{termo}:{ncm}: {erro}")
+            df = pd.DataFrame()
+        if not df.empty:
+            partes.append(df.assign(item=item))
+        if pausa:
+            time.sleep(pausa)
+    ofertas = cb.remover_duplicadas(pd.concat(partes, ignore_index=True)) if partes else pd.DataFrame()
+    return ofertas, falhas
 
 
 def coletar(cliente, municipios: list[str], dias: int = INTERVALO_DIAS, pausa: float = 0.0,
@@ -84,7 +84,7 @@ def coletar(cliente, municipios: list[str], dias: int = INTERVALO_DIAS, pausa: f
             progresso(n, len(municipios), nome)
         ibge = MUNICIPIOS_AL[nome]
         df, f = baixar_municipio(cliente, ibge, dias, pausa)
-        consultas += sum(len(i.ncms) for i in cb.ITENS_REGIAO_2)
+        consultas += len(cb.consultas_api())
         falhas += f
         if not df.empty:
             classificadas = cb.classificar_ofertas(df)

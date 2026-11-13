@@ -30,8 +30,10 @@ Os códigos NCM foram conferidos na Tabela NCM vigente (`data/Tabela_NCM_Vigente
 
 ## 2. Da nota fiscal ao preço por kg, litro ou dúzia
 
-1. **Busca por NCM.** Para cada item, a API é consultada pelo código NCM, sem descrição. Isso
-   traz todas as marcas do produto: a marca não importa.
+1. **Busca por termo + NCM.** A API exige uma descrição na pesquisa; por isso cada item é
+   consultado com um termo genérico (ex.: "FEIJAO", "CAFE") junto com o código NCM. Isso traz
+   todas as marcas do produto: a marca não importa. A carne usa três termos (PATINHO, COXAO,
+   CHA), e ofertas repetidas entre termos são removidas.
 2. **Filtro pela especificação.** O NCM é mais amplo que o item do DIEESE (o 1905.90.90 inclui
    bolos; o 0201.30.00 inclui picanha). Cada item tem palavras obrigatórias e proibidas na
    descrição: por exemplo, a carne precisa conter patinho, coxão mole ou coxão duro (ou "chã de

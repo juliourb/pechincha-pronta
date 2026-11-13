@@ -13,7 +13,7 @@ e guarda o resultado. Isso serve para três coisas:
 ```text
 GitHub Actions (todo dia às 04:23 de Maceió)
   └─ a última coleta tem 10 dias ou mais?  não → encerra
-       └─ sim → scripts/coleta_estadual.py (102 municípios × 15 códigos NCM = 1.530 consultas)
+       └─ sim → scripts/coleta_estadual.py (102 municípios × 19 consultas = 1.938)
             ├─ ofertas.parquet     cada oferta da API, classificada (dados brutos + resultado)
             ├─ lojas.parquet       a cesta de cada estabelecimento
             ├─ municipios.parquet  indicadores por município
