@@ -25,6 +25,31 @@ _PRECO_PRODUTO = {
 }
 _MARCAS = ["MARCA A", "MARCA B", "MARCA C"]
 
+# Churrasco: ofertas fictícias por termo de busca, com embalagens variadas.
+_OFERTAS_CHURRASCO: dict[str, list[tuple[str, str, float]]] = {
+    "CERVEJA": [("CERVEJA PILSEN MARCA A LATA 350ML", "UN", 3.49), ("CERVEJA MARCA B LATA 269ML", "UN", 2.79),
+                ("CERVEJA MARCA C LONG NECK 330ML", "UN", 5.99), ("CERVEJA MARCA A GARRAFA 600ML", "UN", 7.49),
+                ("CERVEJA MARCA B LATA 350ML C/12", "UN", 39.90), ("CERVEJA MARCA D LATAO 473ML", "UN", 4.99),
+                ("CERVEJA MARCA C 1L", "UN", 9.90)],
+    "CERVEJA SEM ALCOOL": [("CERVEJA SEM ALCOOL MARCA A LATA 350ML", "UN", 4.29),
+                           ("CERVEJA ZERO ALCOOL MARCA C LONG NECK 330ML", "UN", 6.49)],
+    "CARVAO": [("CARVAO VEGETAL MARCA A 3KG", "UN", 18.90), ("CARVAO MARCA B 5KG", "UN", 27.90),
+               ("CARVAO MARCA C 2,5KG", "UN", 16.50)],
+    "FAROFA": [("FAROFA DE MANDIOCA TEMPERADA MARCA A 250G", "UN", 6.50),
+               ("FAROFA PRONTA BACON MARCA B 400G", "UN", 9.90), ("FAROFA MARCA C 500G", "UN", 7.90)],
+    "PICANHA": [("PICANHA BOVINA RESFRIADA KG", "KG", 69.90), ("PICANHA BOV MARCA A KG", "KG", 79.90),
+                ("PICANHA SUINA KG", "KG", 29.90)],
+    "ALCATRA": [("ALCATRA BOVINA KG", "KG", 44.90), ("ALCATRA COM MAMINHA KG", "KG", 47.90)],
+    "FRALDINHA": [("FRALDINHA BOVINA KG", "KG", 39.90), ("FRALDINHA TEMPERADA KG", "KG", 42.90)],
+    "CUPIM": [("CUPIM BOVINO KG", "KG", 36.90)],
+    "COXAO MOLE": [("COXAO MOLE BOVINO KG", "KG", 42.90), ("CARNE BOV CX MOLE KG", "KG", 41.90)],
+    "PAO DE ALHO": [("PAO DE ALHO TRADICIONAL MARCA A 400G", "UN", 12.90),
+                    ("PAO DE ALHO COM QUEIJO MARCA B 300G", "UN", 13.90)],
+    "QUEIJO COALHO": [("QUEIJO COALHO ESPETO 7UN 420G", "UN", 18.90), ("QUEIJO COALHO KG", "KG", 44.90),
+                      ("QUEIJO COALHO MARCA A 500G", "UN", 24.90)],
+}
+_NCM_CONGELADA = "02023000"
+
 # Cesta básica: ofertas fictícias por NCM, com descrições no estilo das notas fiscais.
 # (descrição, unidade de medida, preço). Algumas estão fora da especificação de propósito
 # (café em grão, arroz parboilizado, banana-da-terra) para exercitar o filtro.
@@ -115,6 +140,8 @@ class DemoClient:
         if descricao is None and ncm in _OFERTAS_NCM:
             return self._cesta_basica(codigo_ibge, ncm, dias)
         descricao = (descricao or "PRODUTO").upper()
+        if descricao in _OFERTAS_CHURRASCO:
+            return self._churrasco(codigo_ibge, descricao, ncm, dias)
         base, unidade = _PRECO_PRODUTO.get(descricao, (10.0, "UN"))
         registros = []
         for i in range(1, 11):
@@ -154,5 +181,29 @@ class DemoClient:
                                 "venda": {"dataVenda": _data(r, dias), "valorDeclarado": valor,
                                           "valorVenda": valor}},
                     "estabelecimento": _estabelecimento(i, codigo_ibge, prefixo),
+                })
+        return normalizar_resultado(registros)
+
+    def _churrasco(self, codigo_ibge: int, termo: str, ncm: str | None, dias: int) -> pd.DataFrame:
+        ofertas = _OFERTAS_CHURRASCO[termo]
+        if ncm == _NCM_CONGELADA:  # versão congelada das carnes, um pouco mais barata
+            ofertas = [(d.replace(" RESFRIADA", "").replace(" KG", " CONGELADA KG"), u, round(p * 0.88, 2)) for d, u, p in ofertas]
+        registros = []
+        for i in range(1, 11):
+            loja = _rng("loja-churras", codigo_ibge, i)
+            fator_loja = loja.uniform(0.90, 1.15)
+            r = _rng("churras", termo, ncm, codigo_ibge, i)
+            if r.random() < 0.15:
+                continue
+            for j, (desc, unidade, preco) in enumerate(ofertas):
+                if j > 0 and r.random() < 0.4:
+                    continue
+                valor = round(preco * fator_loja * r.uniform(0.95, 1.06), 2)
+                registros.append({
+                    "produto": {"codigo": f"{i}{j}", "descricao": desc, "ncm": ncm,
+                                "gtin": f"789{zlib.crc32(desc.encode()):010d}", "unidadeMedida": unidade,
+                                "venda": {"dataVenda": _data(r, dias), "valorDeclarado": valor,
+                                          "valorVenda": valor}},
+                    "estabelecimento": _estabelecimento(i, codigo_ibge, "MERCADO"),
                 })
         return normalizar_resultado(registros)

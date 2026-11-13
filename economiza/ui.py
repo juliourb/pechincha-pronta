@@ -51,9 +51,9 @@ def buscar_cesta(itens: list[str], codigo_ibge: int, dias: int) -> pd.DataFrame:
     """Uma consulta por (item, NCM); cada linha recebe a coluna ``item``."""
     partes = []
     progresso = st.progress(0.0, text="Consultando a API…")
-    consultas = [(item, ncm) for item in itens for ncm in CESTA_CHURRASCO[item]]
+    consultas = [(item, ncm) for item in itens for ncm in CESTA_CHURRASCO[item].ncms]
     for n, (item, ncm) in enumerate(consultas, start=1):
-        df = _buscar_produto(codigo_ibge, normalizar(item), ncm, dias)
+        df = _buscar_produto(codigo_ibge, CESTA_CHURRASCO[item].descricao_api, ncm, dias)
         if not df.empty:
             partes.append(df.assign(item=item))
         progresso.progress(n / len(consultas), text=f"Consultando {item} (NCM {ncm})…")

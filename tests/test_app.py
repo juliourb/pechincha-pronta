@@ -49,3 +49,14 @@ def test_cesta_basica_calcula_e_permite_retirar_item():
     at.multiselect[0].unselect("Pão francês").run()
     assert not at.exception
     assert at.metric[0].value != completas_antes
+
+
+def test_churrasco_subfiltro_de_formato():
+    at = AppTest.from_file(str(RAIZ / "pages/2_Churrasco.py"), default_timeout=T).run()
+    at.button[0].click().run()
+    total_antes = at.metric[1].value
+    at.selectbox(key="s_Cerveja").set_value("Long neck").run()
+    assert not at.exception
+    assert at.metric[1].value != total_antes  # long neck é mais cara por litro
+    at.text_input(key="t_Cerveja").input("marca inexistente").run()
+    assert not at.exception and "Nenhuma oferta de **Cerveja**" in at.error[0].value

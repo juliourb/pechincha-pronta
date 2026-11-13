@@ -101,26 +101,36 @@ def _num(txt: str) -> float:
     return float(txt.replace(",", "."))
 
 
-def tamanho_embalagem(descricao: str) -> tuple[float, str] | None:
-    """Lê o conteúdo total da embalagem na descrição: '5KG' -> (5, 'kg'), '12X1L' -> (12, 'L').
+def embalagem(descricao: str) -> tuple[float, float, str] | None:
+    """Lê a embalagem na descrição e devolve ``(total, unitario, unidade)``.
 
-    Devolve ``None`` quando não encontra um tamanho (a oferta vai para o diagnóstico).
+    '5KG' -> (5, 5, 'kg'); 'CERVEJA LATA 350ML C/12' -> (4,2, 0,35, 'L'); '12X1L' -> (12, 1, 'L').
+    O tamanho unitário serve para filtrar formatos (lata de 350 ml, garrafa de 600 ml...).
     """
     d = normalizar(descricao)
     m = _RE_MULTI.search(d)
     if m:
         unidade, fator = _UNIDADES[m.group(3)]
-        return int(m.group(1)) * _num(m.group(2)) * fator, unidade
+        unitario = _num(m.group(2)) * fator
+        return int(m.group(1)) * unitario, unitario, unidade
     tamanhos = _RE_TAMANHO.findall(d)
     if not tamanhos:
         return None
     valor, sigla = tamanhos[-1]  # o último costuma ser o peso/volume da embalagem
     unidade, fator = _UNIDADES[sigla]
-    total = _num(valor) * fator
+    unitario = _num(valor) * fator
     caixa = _RE_CAIXA.search(d)
-    if caixa:
-        total *= int(caixa.group(1))
-    return (total, unidade) if total > 0 else None
+    total = unitario * int(caixa.group(1)) if caixa else unitario
+    return (total, unitario, unidade) if total > 0 else None
+
+
+def tamanho_embalagem(descricao: str) -> tuple[float, str] | None:
+    """Conteúdo total da embalagem: '5KG' -> (5, 'kg'), '12X1L' -> (12, 'L').
+
+    Devolve ``None`` quando não encontra um tamanho (a oferta vai para o diagnóstico).
+    """
+    e = embalagem(descricao)
+    return (e[0], e[2]) if e else None
 
 
 def preco_unidade_base(item: ItemCesta, descricao: str, unidade_medida: str | None,
@@ -159,12 +169,17 @@ def preco_unidade_base(item: ItemCesta, descricao: str, unidade_medida: str | No
 # --------------------------------------------------------------------------------------
 # 2. Classificação das ofertas
 # --------------------------------------------------------------------------------------
-def classificar_ofertas(df: pd.DataFrame) -> pd.DataFrame:
+def classificar_ofertas(df: pd.DataFrame, itens: dict | None = None) -> pd.DataFrame:
     """Recebe as ofertas da API (com a coluna ``item``) e devolve uma linha por oferta com
-    ``preco_base`` e ``motivo`` ('ok' ou por que foi descartada).
+    ``preco_base`` (R$ por kg, L ou dúzia), ``tamanho_unitario`` e ``motivo``
+    ('ok' ou por que foi descartada).
+
+    ``itens`` mapeia nome -> definição do item (padrão: a cesta básica). A cesta de
+    churrasco usa a mesma função com os seus próprios itens.
     """
-    colunas = ["item", "cnpj", "estabelecimento", "descricao", "unidade_medida", "valor_declarado",
-               "valor_venda", "data_venda", "preco_base", "motivo"]
+    itens = itens or ITENS_POR_NOME
+    colunas = ["item", "cnpj", "estabelecimento", "descricao", "ncm", "unidade_medida", "valor_declarado",
+               "valor_venda", "data_venda", "preco_base", "tamanho_unitario", "motivo"]
     if df.empty:
         return pd.DataFrame(columns=colunas)
     dados = df.copy()
@@ -175,7 +190,7 @@ def classificar_ofertas(df: pd.DataFrame) -> pd.DataFrame:
     dados["preco"] = dados["valor_declarado"].fillna(dados["valor_venda"])
     precos, motivos = [], []
     for linha in dados.itertuples(index=False):
-        item = ITENS_POR_NOME[linha.item]
+        item = itens[linha.item]
         desc = normalizar(linha.descricao)
         if item.exige and not re.search(item.exige, desc):
             precos.append(None); motivos.append("fora da especificação")
@@ -186,6 +201,8 @@ def classificar_ofertas(df: pd.DataFrame) -> pd.DataFrame:
         p, motivo = preco_unidade_base(item, desc, linha.unidade_medida, linha.preco)
         precos.append(p); motivos.append(motivo)
     dados["preco_base"] = pd.to_numeric(pd.Series(precos, index=dados.index), errors="coerce")
+    tamanhos = dados["descricao"].map(embalagem)
+    dados["tamanho_unitario"] = tamanhos.map(lambda e: e[1] if e else np.nan)
     dados["motivo"] = motivos
 
     # Preços atípicos (erro de cadastro ou de leitura do tamanho), item a item.

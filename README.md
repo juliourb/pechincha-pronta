@@ -10,8 +10,10 @@ descobrir **onde está mais barato** comprar em cada município alagoano, com ba
 **notas fiscais eletrônicas** emitidas pelos estabelecimentos.
 
 - ⛽ **Combustível**: preço por posto, menor/mediana/maior preço do município e mapa.
-- 🍖 **Cesta de churrasco**: monte a cesta (itens + quantidades + marca) e veja o
-  estabelecimento com o **menor total**, apenas entre os que vendem a cesta completa.
+- 🍖 **Cesta de churrasco**: monte a cesta e veja o estabelecimento com o **menor total**,
+  entre os que vendem tudo. Os preços são comparados **por kg ou litro**, e cada item tem
+  subfiltros: formato da cerveja (lata, long neck, garrafa 600 ml, litrão), carne resfriada
+  ou congelada, carvão por tamanho de saco, filtro por marca etc.
 - 🧺 **Cesta básica**: a cesta do Decreto-Lei 399/1938 (a mesma do DIEESE) em cada
   estabelecimento, sem importar a marca. Mostra a menor e a maior cesta de cada loja,
   quais itens faltam, quais pesam mais e uma análise automática em texto. Em Maceió,
@@ -194,15 +196,16 @@ data/                     tabela NCM e dados auxiliares (SINESP) para estudos fu
 - Só aparecem estabelecimentos que emitiram nota fiscal no período consultado (até 10 dias).
 - O preço é o da nota mais recente e pode diferir do preço atual no local.
 - O mapa depende das coordenadas registradas na nota, que podem faltar ou ser imprecisas.
-- O NCM agrupa produtos parecidos (todos os cortes bovinos desossados têm o mesmo código).
-  Sem escolher a descrição, o app usa a opção mais barata, o que pode comparar coisas
-  diferentes (por exemplo, uma lata de cerveja com uma dose em um bar).
+- O tamanho da embalagem é lido na descrição da nota. Ofertas sem tamanho (ex.: "DOSE
+  CERVEJA") são descartadas e aparecem na aba **Diagnóstico** de cada cesta.
+- Nas cestas, o subtotal é proporcional (kg ou litro × preço); na prática, compram-se
+  embalagens inteiras.
 
 ## Histórico
 
 | Versão | O que mudou |
 |---|---|
-| 2.1 | Nova página **Cesta básica** (Decreto-Lei 399/1938, Região 2) com menor/típica/maior cesta por loja, cobertura e sensibilidade dos itens, análise automática, comparação com o DIEESE e script para o estado inteiro. |
+| 2.1 | Cesta de churrasco com preço por kg/litro, subfiltros por item e filtro por marca. Nova página **Cesta básica** (Decreto-Lei 399/1938, Região 2) com menor/típica/maior cesta por loja, cobertura e sensibilidade dos itens, análise automática, comparação com o DIEESE e script para o estado inteiro. |
 | 2.0 | Publicado como repositório aberto. Código reorganizado no pacote `economiza/`; token fora do código; correções na cesta (NCMs duplicados, itens com o mesmo NCM misturados, paginação com filtro de bairro); tratamento de erros e timeout; cache; mapa sem chave de API; exportação CSV/GeoJSON; modo demonstração; testes e CI. |
 | 1.5 (alpha) | Consultas de combustível e cesta de churrasco. |
 
