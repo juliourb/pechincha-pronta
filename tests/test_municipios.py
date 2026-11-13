@@ -22,3 +22,14 @@ def test_municipio_inexistente_levanta_erro():
 def test_normalizar_valores_nao_texto():
     assert normalizar(None) == ""
     assert normalizar(float("nan")) == ""
+
+
+def test_nome_oficial_com_acentos():
+    from economiza.municipios import MUNICIPIOS_AL, nome_oficial
+
+    assert nome_oficial("SAO JOSE DA TAPERA") == "São José da Tapera"
+    assert nome_oficial("OLHO D'AGUA DAS FLORES") == "Olho d'Água das Flores"
+    assert nome_oficial("COITE DO NOIA") == "Coité do Nóia"
+    assert nome_oficial("PALMEIRA DOS INDIOS") == "Palmeira dos Índios"
+    assert nome_oficial("maceió") == "Maceió"
+    assert len({nome_oficial(n) for n in MUNICIPIOS_AL}) == 102

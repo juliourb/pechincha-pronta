@@ -211,7 +211,10 @@ def classificar_ofertas(df: pd.DataFrame, itens: dict | None = None) -> pd.DataF
     atipico = ok & ((dados["preco_base"] < mediana / FATOR_ATIPICO) | (dados["preco_base"] > mediana * FATOR_ATIPICO))
     dados.loc[atipico, "motivo"] = "preço atípico"
     dados.loc[dados["motivo"] != "ok", "preco_base"] = np.nan
-    return dados[[c for c in colunas if c in dados] + [c for c in ("bairro", "logradouro", "numero", "latitude", "longitude", "municipio", "codigo_ibge") if c in dados]]
+    # Mantém também as demais colunas da API (gtin, cep...): a coleta estadual as guarda para
+    # permitir refazer a classificação no futuro sem consultar a API de novo.
+    dados = dados.drop(columns="preco")
+    return dados[[c for c in colunas if c in dados] + [c for c in dados.columns if c not in colunas]]
 
 
 # --------------------------------------------------------------------------------------

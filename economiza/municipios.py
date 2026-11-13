@@ -62,3 +62,24 @@ def codigo_ibge(nome_municipio: str) -> int:
     if codigo is None:
         raise ValueError(f"Município não encontrado em Alagoas: {nome_municipio!r}")
     return codigo
+
+
+# Acentos e minúsculas da grafia oficial (IBGE), aplicados palavra a palavra.
+_PALAVRAS = {
+    "SAO": "São", "JOSE": "José", "UNIAO": "União", "MACEIO": "Maceió", "AGUA": "Água",
+    "ANTONIO": "Antônio", "BELEM": "Belém", "CHA": "Chã", "COITE": "Coité", "NOIA": "Nóia",
+    "COLONIA": "Colônia", "CRAIBAS": "Craíbas", "JACARE": "Jacaré", "JACUIPE": "Jacuípe",
+    "JEQUIA": "Jequiá", "JUNDIA": "Jundiá", "NEGRAO": "Negrão", "MONTEIROPOLIS": "Monteirópolis",
+    "OLIVENCA": "Olivença", "INDIOS": "Índios", "PAO": "Pão", "ACUCAR": "Açúcar",
+    "PIACABUCU": "Piaçabuçu", "POCO": "Poço", "COLEGIO": "Colégio", "MUNDAU": "Mundaú",
+    "BRAS": "Brás", "LUIS": "Luís", "SEBASTIAO": "Sebastião", "TEOTONIO": "Teotônio",
+    "VICOSA": "Viçosa", "D'AGUA": "d'Água", "D'ARCA": "d'Arca",
+    "DA": "da", "DE": "de", "DO": "do", "DAS": "das", "DOS": "dos",
+}
+
+
+def nome_oficial(nome: str) -> str:
+    """'SAO JOSE DA TAPERA' -> 'São José da Tapera'; 'OLHO D'AGUA DAS FLORES' -> "Olho d'Água das Flores"."""
+    palavras = normalizar(nome).split()
+    return " ".join(_PALAVRAS.get(p, p.capitalize()) if i == 0 or p not in ("DA", "DE", "DO", "DAS", "DOS")
+                    else _PALAVRAS[p] for i, p in enumerate(palavras))

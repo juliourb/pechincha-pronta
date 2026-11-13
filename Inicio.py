@@ -23,6 +23,8 @@ with col2:
 with col3:
     st.page_link("pages/3_Cesta_basica.py", label="Cesta básica", icon="🧺")
     st.caption("Cesta do Decreto-Lei 399 (DIEESE) por loja, com análise e comparação.")
+st.page_link("pages/4_Panorama.py", label="Panorama de Alagoas", icon="🗺️")
+st.caption("A cesta básica nos 102 municípios: ranking, mapa e histórico, com coletas automáticas a cada 10 dias.")
 
 st.header("Como usar")
 st.markdown(

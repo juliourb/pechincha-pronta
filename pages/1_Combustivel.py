@@ -4,7 +4,7 @@ from streamlit.components.v1 import html
 
 from economiza.api import DIAS_MAXIMO, TIPOS_COMBUSTIVEL, EconomizaAPIError, filtrar_bairro
 from economiza.mapa import criar_mapa, para_geojson
-from economiza.municipios import codigo_ibge
+from economiza.municipios import codigo_ibge, nome_oficial
 from economiza.ui import aviso_modo_demo, buscar_combustivel, rodape, seletor_municipio
 
 # Streamlit roda este arquivo de cima para baixo A CADA interação do usuário.
@@ -56,7 +56,7 @@ if "postos" in st.session_state:
             .reset_index(drop=True)
         )
         preco = postos["valor_declarado"]
-        st.subheader(f"{tipo_nome} em {cidade.title()}" + (f" · bairro {bairro}" if bairro else ""))
+        st.subheader(f"{tipo_nome} em {nome_oficial(cidade)}" + (f" · bairro {bairro}" if bairro else ""))
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Postos", len(postos))
         m2.metric("Menor preço", f"R$ {preco.min():.2f}")

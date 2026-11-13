@@ -60,3 +60,21 @@ def test_churrasco_subfiltro_de_formato():
     assert at.metric[1].value != total_antes  # long neck é mais cara por litro
     at.text_input(key="t_Cerveja").input("marca inexistente").run()
     assert not at.exception and "Nenhuma oferta de **Cerveja**" in at.error[0].value
+
+
+def test_panorama_le_coletas_locais(tmp_path, monkeypatch):
+    import shutil
+
+    from scripts.coleta_estadual import main
+
+    saida = tmp_path / "saida"
+    assert main(["--municipios", "MACEIO", "ARAPIRACA", "PENEDO", "--saida", str(saida), "--pausa", "0",
+                 "--data", "2026-11-03"]) == 0
+    raiz = tmp_path / "coletas"
+    shutil.copytree(saida, raiz / "coleta-2026-11-03")
+    shutil.copy(saida / "coletas.json", raiz / "coletas.json")
+    monkeypatch.setenv("PECHINCHA_COLETAS_DIR", str(raiz))
+    at = AppTest.from_file(str(RAIZ / "pages/4_Panorama.py"), default_timeout=T).run()
+    assert not at.exception
+    assert at.metric[0].value.endswith("de 102")
+    assert "Análise" in " ".join(m.value for m in at.markdown)

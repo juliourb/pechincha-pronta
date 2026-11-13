@@ -1,0 +1,83 @@
+name: coleta-cesta-basica
+
+# Roda todo dia, mas só coleta quando a última coleta tem 10 dias ou mais.
+# Como a API devolve no máximo os 10 dias anteriores, coletas a cada 10 dias se encaixam
+# sem buracos nem sobreposição. Também pode ser disparada à mão (aba Actions > Run workflow).
+on:
+  schedule:
+    - cron: "23 7 * * *"  # 04:23 em Maceió
+  workflow_dispatch:
+    inputs:
+      forcar:
+        description: "Coletar mesmo que a última coleta tenha menos de 10 dias"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write  # criar as Releases com os arquivos
+
+concurrency:
+  group: coleta
+  cancel-in-progress: false
+
+jobs:
+  coleta:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Baixa o índice das coletas anteriores
+        run: |
+          mkdir -p anterior
+          gh release download indice -p coletas.json -D anterior || echo "[]" > anterior/coletas.json
+
+      - name: Verifica se já é hora de coletar
+        id: prazo
+        env:
+          TEM_TOKEN: ${{ secrets.ECONOMIZA_AL_TOKEN != '' }}
+        run: |
+          if [ "$TEM_TOKEN" != "true" ]; then
+            echo "tem_token=false" >> "$GITHUB_OUTPUT"
+            echo "⚠️ Secret ECONOMIZA_AL_TOKEN não cadastrado: coleta não realizada (veja docs/COLETA.md)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "tem_token=true" >> "$GITHUB_OUTPUT"
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, datetime
+          indice = json.load(open("anterior/coletas.json"))
+          ultima = max((c["data_coleta"] for c in indice if not c.get("demo")), default=None)
+          hoje = datetime.date.today()
+          dias = (hoje - datetime.date.fromisoformat(ultima)).days if ultima else 999
+          print(f"coletar={'true' if dias >= 10 else 'false'}")
+          print(f"dias_desde_ultima={dias}")
+          PY
+
+      - uses: actions/setup-python@v5
+        if: steps.prazo.outputs.tem_token == 'true' && (steps.prazo.outputs.coletar == 'true' || inputs.forcar)
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Coleta os 102 municípios
+        if: steps.prazo.outputs.tem_token == 'true' && (steps.prazo.outputs.coletar == 'true' || inputs.forcar)
+        env:
+          ECONOMIZA_AL_TOKEN: ${{ secrets.ECONOMIZA_AL_TOKEN }}
+        run: |
+          pip install -r requirements.txt
+          python scripts/coleta_estadual.py --saida coleta --dias 10 --pausa 0.3 \
+            --indice-anterior anterior/coletas.json --exigir-token
+          cat coleta/resumo.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publica a Release da coleta e atualiza o índice
+        if: steps.prazo.outputs.tem_token == 'true' && (steps.prazo.outputs.coletar == 'true' || inputs.forcar)
+        run: |
+          TAG=$(python3 -c "import json; print(json.load(open('coleta/manifesto.json'))['tag'])")
+          gh release delete "$TAG" -y --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" coleta/ofertas.parquet coleta/lojas.parquet coleta/municipios.parquet \
+            coleta/manifesto.json --title "Coleta ${TAG#coleta-}" --notes-file coleta/resumo.md
+          gh release view indice >/dev/null 2>&1 || gh release create indice --latest=false \
+            --title "Índice das coletas" --notes "Histórico das coletas (coletas.json). Atualizado automaticamente."
+          gh release upload indice coleta/coletas.json --clobber

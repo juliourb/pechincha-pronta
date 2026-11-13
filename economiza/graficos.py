@@ -154,3 +154,49 @@ def sensibilidade_barras(tabela: pd.DataFrame) -> go.Figure:
 
 def unidade_legivel(item: str) -> str:
     return {"kg": "R$/kg", "L": "R$/L", "dz": "R$/dúzia"}[ITENS_POR_NOME[item].unidade]
+
+
+def ranking_divergente(rank: pd.DataFrame, n: int = 10) -> go.Figure:
+    """Os n municípios mais baratos e os n mais caros, em % da mediana estadual dos municípios."""
+    sel = pd.concat([rank.head(n), rank.tail(n)]).drop_duplicates("municipio").sort_values("pct_vs_estado", ascending=False)
+    cores = [AZUL if v < 0 else LARANJA for v in sel["pct_vs_estado"]]
+    fig = go.Figure(go.Bar(
+        x=sel["pct_vs_estado"], y=sel["nome"], orientation="h", marker=dict(color=cores, cornerradius=4),
+        text=[f"{v:+.0f}% · {_moeda(m)}" for v, m in zip(sel["pct_vs_estado"], sel["mediana"])],
+        textposition="outside", cliponaxis=False,
+        customdata=sel[["com_cesta_completa"]],
+        hovertemplate="<b>%{y}</b><br>%{x:+.1f}% vs. estado<br>%{customdata[0]} lojas com a cesta<extra></extra>"))
+    fig.add_vline(x=0, line=dict(color="#52514e", width=1))
+    limite = max(5, sel["pct_vs_estado"].abs().max() * 1.45)
+    fig.update_layout(title=f"Os {n} municípios mais baratos (azul) e os {n} mais caros (laranja)",
+                      xaxis_title="Cesta mediana em relação à mediana dos municípios (%)",
+                      height=max(360, 24 * len(sel) + 120), **_LAYOUT)
+    fig.update_xaxes(range=[-limite, limite], ticksuffix="%")
+    return fig
+
+
+def dispersao_concorrencia(rank: pd.DataFrame) -> go.Figure:
+    """Cada ponto é um município: número de lojas com a cesta × preço mediano."""
+    fig = go.Figure(go.Scatter(
+        x=rank["com_cesta_completa"], y=rank["mediana"], mode="markers", text=rank["nome"],
+        marker=dict(color=AZUL, size=11, opacity=0.8, line=dict(color="white", width=1.5)),
+        hovertemplate="<b>%{text}</b><br>%{x} lojas com a cesta<br>Mediana R$ %{y:.2f}<extra></extra>"))
+    fig.update_layout(title="Mais lojas, cesta mais barata? (cada ponto é um município)",
+                      xaxis_title="Lojas com a cesta completa (escala logarítmica)",
+                      yaxis_title="Cesta mediana (R$)", height=420, **_LAYOUT)
+    fig.update_xaxes(type="log")
+    return fig
+
+
+def serie_historica(indice: list[dict]) -> go.Figure:
+    """Mediana estadual da cesta em cada coleta."""
+    pontos = [(c["data_coleta"], c["estado"]["cesta_mediana"], c["estado"]["lojas_com_cesta"])
+              for c in indice if c.get("estado", {}).get("cesta_mediana")]
+    datas, medianas, lojas = zip(*pontos) if pontos else ([], [], [])
+    fig = go.Figure(go.Scatter(
+        x=list(datas), y=list(medianas), mode="lines+markers", customdata=list(lojas),
+        line=dict(color=AZUL, width=2), marker=dict(size=9, color=AZUL, line=dict(color="white", width=2)),
+        hovertemplate="%{x}<br>Mediana R$ %{y:.2f}<br>%{customdata} lojas com a cesta<extra></extra>"))
+    fig.update_layout(title="Cesta básica mediana em Alagoas, por coleta",
+                      yaxis_title="R$", height=360, **_LAYOUT)
+    return fig

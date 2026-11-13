@@ -1,0 +1,112 @@
+# Coleta estadual e histórico da cesta básica
+
+A cada 10 dias, um robô (GitHub Actions) calcula a cesta básica nos 102 municípios de Alagoas
+e guarda o resultado. Isso serve para três coisas:
+
+- **Registro:** cada coleta fica arquivada com a data, e não muda depois de publicada.
+- **Série histórica:** a API só devolve os últimos 10 dias, então o histórico só existe se for
+  guardado. Ele começa na primeira coleta.
+- **Velocidade:** a página *Panorama de Alagoas* lê os arquivos prontos e abre na hora.
+
+## Como funciona
+
+```text
+GitHub Actions (todo dia às 04:23 de Maceió)
+  └─ a última coleta tem 10 dias ou mais?  não → encerra
+       └─ sim → scripts/coleta_estadual.py (102 municípios × 15 códigos NCM = 1.530 consultas)
+            ├─ ofertas.parquet     cada oferta da API, classificada (dados brutos + resultado)
+            ├─ lojas.parquet       a cesta de cada estabelecimento
+            ├─ municipios.parquet  indicadores por município
+            └─ manifesto.json      linhas e bytes de cada arquivo, resumo do estado
+       → publica a Release "coleta-AAAA-MM-DD" com esses arquivos
+       → atualiza coletas.json na Release fixa "indice" (histórico de todas as coletas)
+
+App (página Panorama) → lê coletas.json e os Parquet pelos links públicos de download
+```
+
+**Por que 10 dias:** a API devolve no máximo as notas dos 10 dias anteriores. Com coletas a
+cada 10 dias, as janelas se encaixam sem buracos nem sobreposição. O workflow roda todos os
+dias e só coleta quando completa 10 dias da anterior. Por isso o intervalo é exato, sem os
+saltos de fim de mês que um agendamento por dia do mês teria.
+
+**Por que Releases do GitHub:** os arquivos não entram no histórico do git, então o repositório
+não incha e o app não é republicado a cada coleta. Cada coleta tem um link permanente, e o
+download não consome o limite de chamadas da API do GitHub. Segundo a documentação do GitHub,
+cada arquivo de uma Release pode ter até 2 GiB.
+
+**Por que Parquet:** é um formato colunar e comprimido (zstd). É lido por pandas, R e DuckDB,
+e o QGIS também abre Parquet. O DuckDB permite consultar os arquivos em SQL direto pelo link,
+sem baixar tudo para a memória:
+
+```sql
+SELECT municipio, item, median(preco_base) AS preco_mediano
+FROM 'https://github.com/juliourb/pechincha-pronta/releases/download/coleta-2026-11-23/ofertas.parquet'
+WHERE motivo = 'ok'
+GROUP BY ALL ORDER BY municipio, item;
+```
+
+As ofertas guardam os **dados brutos** da API (descrição, GTIN, NCM, unidade e preços), além do
+resultado da classificação. Assim, se as regras da cesta mudarem, as coletas antigas podem ser
+reclassificadas sem consultar a API de novo.
+
+## Ativação (uma vez)
+
+1. No GitHub, abra o repositório e vá em **Settings → Secrets and variables → Actions →
+   New repository secret**.
+2. Nome: `ECONOMIZA_AL_TOKEN`; valor: o token da API. Salve.
+3. Em **Actions → coleta-cesta-basica → Run workflow**, marque *forçar* e rode a primeira
+   coleta. Ela deve levar de 15 a 40 minutos.
+4. Ao terminar, a Release `coleta-AAAA-MM-DD` aparece na página do repositório, e a página
+   Panorama passa a mostrar os dados reais.
+
+Sem o *secret*, o workflow apenas pula a coleta e deixa um aviso no resumo da execução, sem
+falhar todo dia. Como segunda proteção, o script roda com `--exigir-token` e se recusa a
+publicar dados fictícios como se fossem reais.
+
+**Atenção:** o GitHub desativa workflows agendados em repositórios públicos após 60 dias sem
+nenhum commit. Se isso acontecer, aparece um aviso na aba Actions com um botão para reativar.
+
+## Tamanho dos arquivos
+
+O que domina é `ofertas.parquet`. As tabelas `lojas` e `municipios` somam poucos por cento.
+
+**Bytes por oferta (medidos aqui):**
+
+| Simulação | Bytes por oferta |
+|---|---:|
+| Dados do modo demonstração (descrições muito repetidas) | ~13 |
+| Simulação com alta variedade (descrições, lojas, CNPJs e GTINs todos diferentes) | ~40 |
+
+Os dados reais devem ficar entre esses dois valores: as descrições se repetem bastante, mas
+menos que no modo demonstração. Para planejar, use o valor mais alto, 40 bytes por oferta.
+
+**Projeção (40 bytes por oferta, 36,5 coletas por ano):**
+
+| Ofertas por coleta (hipótese) | Por coleta | Por ano | Em 5 anos |
+|---:|---:|---:|---:|
+| 30 mil | 1,2 MB | 44 MB | 0,2 GB |
+| 100 mil | 4 MB | 146 MB | 0,7 GB |
+| 300 mil | 12 MB | 438 MB | 2,2 GB |
+
+Quantas ofertas a API devolve por coleta ainda é uma incógnita. A primeira coleta responde:
+o `manifesto.json` de cada coleta registra linhas e bytes de cada arquivo, e a aba
+**Dados e tamanho** do Panorama mostra o tamanho real de cada coleta e a projeção anual
+calculada com eles.
+
+Mesmo no cenário mais alto, o volume é pequeno para Parquet e cabe nas Releases. O app não
+sofre com o crescimento, porque baixa só `lojas` e `municipios` da coleta escolhida, que são
+pequenos; `ofertas` fica para download e análise. Se um dia o volume crescer muito, o caminho
+natural é um banco PostgreSQL/PostGIS ou o MotherDuck (DuckDB na nuvem).
+
+## Rodando localmente
+
+```bash
+python scripts/coleta_estadual.py --municipios MACEIO ARAPIRACA --saida coleta_teste
+```
+
+Para a página Panorama ler coletas locais, organize uma pasta com `coletas.json` na raiz e uma
+subpasta por coleta (`coleta-AAAA-MM-DD/`), e aponte para ela:
+
+```bash
+PECHINCHA_COLETAS_DIR=minhas_coletas streamlit run Inicio.py
+```

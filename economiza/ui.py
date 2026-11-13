@@ -9,7 +9,7 @@ from . import obter_cliente
 from .api import EconomizaAPIError
 from .cesta import CESTA_CHURRASCO
 from .cesta_basica import ITENS_REGIAO_2
-from .municipios import NOMES_MUNICIPIOS, normalizar
+from .municipios import NOMES_MUNICIPIOS, nome_oficial, normalizar
 
 CACHE_TTL = 15 * 60  # 15 min: os preços vêm de notas fiscais, não mudam a cada segundo
 
@@ -31,7 +31,7 @@ def aviso_modo_demo() -> None:
 def seletor_municipio(key: str) -> str:
     padrao = NOMES_MUNICIPIOS.index("MACEIO")
     return st.selectbox("Município", NOMES_MUNICIPIOS, index=padrao, key=key,
-                        format_func=lambda n: n.title())
+                        format_func=nome_oficial)
 
 
 # @st.cache_data guarda o resultado da função: chamadas com os mesmos argumentos

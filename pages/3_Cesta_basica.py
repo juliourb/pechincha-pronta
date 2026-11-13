@@ -6,7 +6,7 @@ from economiza import cesta_basica as cb
 from economiza import graficos
 from economiza.api import DIAS_MAXIMO, filtrar_bairro
 from economiza.mapa import criar_mapa, para_geojson
-from economiza.municipios import codigo_ibge, normalizar
+from economiza.municipios import codigo_ibge, nome_oficial, normalizar
 from economiza.ui import aviso_modo_demo, buscar_cesta_basica, rodape, seletor_municipio
 
 # Streamlit roda este arquivo de cima para baixo A CADA interação do usuário.
@@ -64,7 +64,7 @@ if consultar:
 
 if "cesta_basica" not in st.session_state:
     st.info("Escolha o município e clique em **Calcular a cesta**. A consulta faz uma busca por "
-            "código NCM (cerca de 17) e pode levar alguns segundos.")
+            "código NCM (15 códigos) e pode levar alguns segundos.")
     rodape()
     st.stop()
 
@@ -102,7 +102,7 @@ sens = cb.sensibilidade(matriz)
 referencia = cb.REFERENCIA_DIEESE.get(normalizar(consulta["cidade"])) if cesta_completa and not consulta["bairro"] else None
 
 # ---------------------------------------------------------------- indicadores
-st.markdown(f"**3. Resultado em {consulta['cidade'].title()}**" + (f" · bairro {consulta['bairro']}" if consulta["bairro"] else ""))
+st.markdown(f"**3. Resultado em {nome_oficial(consulta['cidade'])}**" + (f" · bairro {consulta['bairro']}" if consulta["bairro"] else ""))
 m = st.columns(5)
 m[0].metric("Cestas completas", f"{len(completas)} de {int((cestas['n_itens'] >= minimo).sum())}",
             help=f"Lojas com todos os itens, entre as que vendem pelo menos {minimo} itens.")
