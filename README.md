@@ -12,17 +12,21 @@ descobrir **onde está mais barato** comprar em cada município alagoano, com ba
 - ⛽ **Combustível**: preço por posto, menor/mediana/maior preço do município e mapa.
 - 🍖 **Cesta de churrasco**: monte a cesta (itens + quantidades + marca) e veja o
   estabelecimento com o **menor total**, apenas entre os que vendem a cesta completa.
+- 🧺 **Cesta básica**: a cesta do Decreto-Lei 399/1938 (a mesma do DIEESE) em cada
+  estabelecimento, sem importar a marca. Mostra a menor e a maior cesta de cada loja,
+  quais itens faltam, quais pesam mais e uma análise automática em texto. Em Maceió,
+  compara com o valor oficial do DIEESE.
 - 🗺️ **Exportação CSV e GeoJSON** (EPSG:4326), pronta para abrir no QGIS.
 - 🧪 **Modo demonstração**: sem token, o app roda com dados **fictícios**, para que
   qualquer pessoa possa testar a interface.
 
 App publicado: https://pechincha-pronta.streamlit.app
 
-**Tecnologias:** Python · Streamlit · pandas · requests · folium (Leaflet) · pytest · GitHub Actions
+**Tecnologias:** Python · Streamlit · pandas · requests · folium (Leaflet) · plotly · pytest · GitHub Actions
 
-| Combustível | Cesta de churrasco |
-|---|---|
-| ![Consulta de combustível](docs/combustivel.png) | ![Cesta de churrasco](docs/churrasco.png) |
+| Cesta básica | Combustível | Cesta de churrasco |
+|---|---|---|
+| ![Cesta básica](docs/cesta_basica.png) | ![Consulta de combustível](docs/combustivel.png) | ![Cesta de churrasco](docs/churrasco.png) |
 
 <sub>Capturas feitas em modo demonstração: nomes, preços e posições são fictícios.</sub>
 
@@ -62,6 +66,27 @@ preço (em empate, a nota mais recente). O subtotal é `preço × quantidade`, e
 estabelecimentos que têm **todos** os itens. Os itens são pesquisados pela descrição e pelos
 códigos **NCM** (Nomenclatura Comum do Mercosul), conferidos na tabela NCM vigente
 (`data/Tabela_NCM_Vigente_20240406.xlsx`).
+
+## Cesta básica em resumo
+
+1. Para cada um dos 12 itens da Região 2 (Alagoas), a API é consultada pelo **código NCM**,
+   o que traz todas as marcas.
+2. As ofertas são filtradas pela **especificação do DIEESE**: café em pó (não em grão), carne
+   de primeira (patinho ou coxão), feijão carioca, farinha de mandioca etc.
+3. O preço vira **R$ por kg, litro ou dúzia**, lendo o tamanho da embalagem na descrição.
+4. Em cada loja: **menor cesta** (opção mais barata de cada item), **típica** (mediana) e
+   **maior** (mais cara) = Σ quantidade do decreto × preço.
+5. Indicadores do DIEESE: **horas de trabalho** e **% do salário mínimo líquido**.
+
+A página permite **retirar itens** da cesta e ver o efeito, mostra **qual item mais impede**
+a cesta completa e tem uma aba de **diagnóstico** com cada oferta aceita ou descartada.
+Metodologia completa, fontes e limitações: **[docs/CESTA_BASICA.md](docs/CESTA_BASICA.md)**.
+
+Para vários municípios ou o estado inteiro (gera CSV por município e GeoJSON para o QGIS):
+
+```bash
+python scripts/cesta_basica_estado.py --municipios MACEIO ARAPIRACA PENEDO
+```
 
 ## Rodando localmente
 
@@ -136,8 +161,9 @@ domínio, então não troque o endereço para `https://`.
 pytest -q
 ```
 
-São 30 testes, todos sem acesso à rede: cliente da API com respostas simuladas (paginação,
-erros HTTP, timeout), regras da cesta, mapa/GeoJSON e testes de ponta a ponta das páginas com
+São 53 testes, todos sem acesso à rede: cliente da API com respostas simuladas (paginação,
+erros HTTP, timeout), regras das cestas (incluindo as fórmulas do DIEESE conferidas com o
+boletim de Maceió), leitura de embalagens, mapa/GeoJSON, o script estadual e testes de ponta a ponta das páginas com
 `streamlit.testing` em modo demonstração. O GitHub Actions roda a suíte a cada push
 (Python 3.10 e 3.12).
 
@@ -147,15 +173,19 @@ erros HTTP, timeout), regras da cesta, mapa/GeoJSON e testes de ponta a ponta da
 Inicio.py                 página inicial
 pages/1_Combustivel.py    consulta de combustível
 pages/2_Churrasco.py      cesta de churrasco
+pages/3_Cesta_basica.py   cesta básica (Decreto-Lei 399/1938)
 economiza/                lógica reutilizável (sem Streamlit, exceto ui.py)
   api.py                  cliente da API Economiza Alagoas
-  cesta.py                NCMs da cesta e cálculo do menor total
+  cesta.py                NCMs da cesta de churrasco e cálculo do menor total
+  cesta_basica.py         metodologia e análises da cesta básica (sem Streamlit)
+  graficos.py             gráficos plotly da cesta básica
   mapa.py                 mapa folium e exportação GeoJSON
   municipios.py           102 municípios de AL e códigos IBGE
   demo.py                 dados fictícios para o modo demonstração
   ui.py                   componentes e cache compartilhados
+scripts/                  cesta_basica_estado.py: cesta em vários municípios
 tests/                    pytest
-docs/                     capturas de tela e guia de Streamlit
+docs/                     guia de Streamlit, metodologia da cesta e capturas de tela
 data/                     tabela NCM e dados auxiliares (SINESP) para estudos futuros
 ```
 
@@ -172,6 +202,7 @@ data/                     tabela NCM e dados auxiliares (SINESP) para estudos fu
 
 | Versão | O que mudou |
 |---|---|
+| 2.1 | Nova página **Cesta básica** (Decreto-Lei 399/1938, Região 2) com menor/típica/maior cesta por loja, cobertura e sensibilidade dos itens, análise automática, comparação com o DIEESE e script para o estado inteiro. |
 | 2.0 | Publicado como repositório aberto. Código reorganizado no pacote `economiza/`; token fora do código; correções na cesta (NCMs duplicados, itens com o mesmo NCM misturados, paginação com filtro de bairro); tratamento de erros e timeout; cache; mapa sem chave de API; exportação CSV/GeoJSON; modo demonstração; testes e CI. |
 | 1.5 (alpha) | Consultas de combustível e cesta de churrasco. |
 

@@ -38,3 +38,14 @@ def test_churrasco_consulta_e_refina():
     total_antes = at.metric[1].value
     at.number_input(key="q_Picanha").set_value(2.0).run()
     assert not at.exception and at.metric[1].value != total_antes
+
+
+def test_cesta_basica_calcula_e_permite_retirar_item():
+    at = AppTest.from_file(str(RAIZ / "pages/3_Cesta_basica.py"), default_timeout=T).run()
+    at.button[0].click().run()
+    assert not at.exception
+    completas_antes = at.metric[0].value
+    assert "Análise" in " ".join(m.value for m in at.markdown)
+    at.multiselect[0].unselect("Pão francês").run()
+    assert not at.exception
+    assert at.metric[0].value != completas_antes

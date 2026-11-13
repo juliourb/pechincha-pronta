@@ -25,6 +25,37 @@ _PRECO_PRODUTO = {
 }
 _MARCAS = ["MARCA A", "MARCA B", "MARCA C"]
 
+# Cesta básica: ofertas fictícias por NCM, com descrições no estilo das notas fiscais.
+# (descrição, unidade de medida, preço). Algumas estão fora da especificação de propósito
+# (café em grão, arroz parboilizado, banana-da-terra) para exercitar o filtro.
+_OFERTAS_NCM: dict[str, list[tuple[str, str, float]]] = {
+    "02013000": [("CARNE BOV PATINHO KG", "KG", 44.90), ("COXAO MOLE BOVINO KG", "KG", 46.90),
+                 ("CARNE BOV COXAO DURO KG", "KG", 42.90), ("PICANHA BOVINA KG", "KG", 69.90)],
+    "02023000": [("PATINHO BOVINO CONGELADO KG", "KG", 39.90)],
+    "04012010": [("LEITE UHT INTEGRAL MARCA A 1L", "UN", 5.49), ("LEITE INTEGRAL MARCA B 1L", "UN", 5.89),
+                 ("LEITE UHT DESNATADO MARCA A 1L", "UN", 5.69)],
+    "07133399": [("FEIJAO CARIOCA T1 MARCA A 1KG", "UN", 8.49), ("FEIJAO CARIOCA MARCA B 1KG", "UN", 8.99),
+                 ("FEIJAO MACASSAR MARCA C 1KG", "UN", 9.49)],
+    "07133319": [],
+    "10063021": [("ARROZ AGULHINHA T1 MARCA A 1KG", "UN", 6.49), ("ARROZ BRANCO T1 MARCA B 5KG", "UN", 29.90),
+                 ("ARROZ PARBOILIZADO MARCA C 1KG", "UN", 6.29)],
+    "11062000": [("FARINHA DE MANDIOCA MARCA A 1KG", "UN", 6.99), ("FARINHA MANDIOCA FINA MARCA B 500G", "UN", 3.79),
+                 ("GOMA DE TAPIOCA MARCA C 1KG", "UN", 9.90)],
+    "07020000": [("TOMATE KG", "KG", 7.99), ("TOMATE CEREJA BANDEJA 250G", "UN", 6.99)],
+    "19059090": [("PAO FRANCES KG", "KG", 15.90), ("PAO CARIOQUINHA KG", "KG", 14.90),
+                 ("BOLO DE MILHO FATIA", "UN", 4.50)],
+    "09012100": [("CAFE TORRADO MOIDO MARCA A 250G", "UN", 11.90), ("CAFE MARCA B 500G", "UN", 22.90),
+                 ("CAFE EM GRAO MARCA C 500G", "UN", 29.90)],
+    "08039000": [("BANANA PRATA KG", "KG", 5.99), ("BANANA NANICA KG", "KG", 3.99),
+                 ("BANANA DA TERRA KG", "KG", 7.49)],
+    "17019900": [("ACUCAR CRISTAL MARCA A 1KG", "UN", 4.49), ("ACUCAR CRISTAL MARCA B 2KG", "UN", 8.79),
+                 ("ACUCAR REFINADO MARCA C 1KG", "UN", 5.29)],
+    "17011400": [],
+    "15079011": [("OLEO DE SOJA MARCA A 900ML", "UN", 8.49), ("OLEO SOJA MARCA B 900 ML", "UN", 8.99)],
+    "04051000": [("MANTEIGA COM SAL MARCA A 200G", "UN", 12.90), ("MANTEIGA MARCA B 500G", "UN", 29.90),
+                 ("MARGARINA MARCA C 500G", "UN", 7.90)],
+}
+
 
 def _rng(*partes: object) -> random.Random:
     return random.Random(zlib.crc32("|".join(map(str, partes)).encode()))
@@ -81,6 +112,8 @@ class DemoClient:
     def pesquisar_produto(self, codigo_ibge: int, descricao: str | None = None,
                           ncm: str | None = None, gtin: str | None = None,
                           dias: int = 7) -> pd.DataFrame:
+        if descricao is None and ncm in _OFERTAS_NCM:
+            return self._cesta_basica(codigo_ibge, ncm, dias)
         descricao = (descricao or "PRODUTO").upper()
         base, unidade = _PRECO_PRODUTO.get(descricao, (10.0, "UN"))
         registros = []
@@ -97,5 +130,29 @@ class DemoClient:
                                 "venda": {"dataVenda": _data(r, dias), "valorDeclarado": preco,
                                           "valorVenda": preco}},
                     "estabelecimento": _estabelecimento(i, codigo_ibge, "MERCADO"),
+                })
+        return normalizar_resultado(registros)
+
+    def _cesta_basica(self, codigo_ibge: int, ncm: str, dias: int) -> pd.DataFrame:
+        registros = []
+        for i in range(1, 16):
+            if i == 15 and ncm != "19059090":  # a loja 15 é uma padaria: só vende pão
+                continue
+            loja = _rng("loja-cesta", codigo_ibge, i)
+            fator_loja = loja.uniform(0.90, 1.15)  # mercados mais baratos ou mais caros
+            r = _rng("cesta", ncm, codigo_ibge, i)
+            if r.random() < 0.12:  # nem toda loja vende tudo
+                continue
+            prefixo = "PADARIA" if i == 15 else "MERCADO"
+            for j, (desc, unidade, preco) in enumerate(_OFERTAS_NCM[ncm]):
+                if j > 0 and r.random() < 0.35:
+                    continue
+                valor = round(preco * fator_loja * r.uniform(0.95, 1.06), 2)
+                registros.append({
+                    "produto": {"codigo": f"{ncm}{j}", "descricao": desc, "ncm": ncm,
+                                "gtin": f"789{zlib.crc32(desc.encode()):010d}", "unidadeMedida": unidade,
+                                "venda": {"dataVenda": _data(r, dias), "valorDeclarado": valor,
+                                          "valorVenda": valor}},
+                    "estabelecimento": _estabelecimento(i, codigo_ibge, prefixo),
                 })
         return normalizar_resultado(registros)

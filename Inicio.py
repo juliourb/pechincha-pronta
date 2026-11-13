@@ -5,7 +5,7 @@ from economiza.ui import aviso_modo_demo, rodape
 st.set_page_config(page_title="Pechincha Pronta", page_icon="🛒")
 
 st.title("Pechincha Pronta 🛒")
-st.caption("Consulta de preços por município em Alagoas · versão 2.0")
+st.caption("Consulta de preços por município em Alagoas · versão 2.1")
 aviso_modo_demo()
 
 st.write(
@@ -13,13 +13,16 @@ st.write(
     "em Alagoas, usando a API pública Economiza Alagoas da SEFAZ-AL."
 )
 
-col1, col2 = st.columns(2)
+col1, col2, col3 = st.columns(3)
 with col1:
     st.page_link("pages/1_Combustivel.py", label="Combustível", icon="⛽")
     st.caption("Preço por posto, estatísticas do município e mapa.")
 with col2:
     st.page_link("pages/2_Churrasco.py", label="Cesta de churrasco", icon="🍖")
     st.caption("Monte a cesta e veja o estabelecimento com o menor total.")
+with col3:
+    st.page_link("pages/3_Cesta_basica.py", label="Cesta básica", icon="🧺")
+    st.caption("Cesta do Decreto-Lei 399 (DIEESE) por loja, com análise e comparação.")
 
 st.header("Como usar")
 st.markdown(

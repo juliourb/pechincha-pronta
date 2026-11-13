@@ -145,6 +145,17 @@ html(mapa.get_root().render(), height=560)          # insere o HTML do mapa na p
 Os mesmos pontos podem ser baixados em GeoJSON (botão "Baixar GeoJSON (QGIS)") para
 análise em SIG.
 
+### Gráficos com plotly
+
+Para gráficos interativos (passar o mouse e ver os valores), a página de cesta básica monta a
+figura com **plotly** em `economiza/graficos.py` e a exibe com uma linha:
+
+```python
+st.plotly_chart(graficos.composicao_barras(comp), use_container_width=True, theme="streamlit")
+```
+
+`theme="streamlit"` faz o gráfico seguir o tema claro/escuro do app.
+
 ## 8. Segredos: `st.secrets`
 
 Tokens e senhas **nunca** devem ficar no código. O Streamlit lê o arquivo
