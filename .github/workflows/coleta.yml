@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: write  # criar as Releases com os arquivos
+  actions: write   # manter o agendamento ativo (último passo)
 
 concurrency:
   group: coleta
@@ -81,3 +82,10 @@ jobs:
           gh release view indice >/dev/null 2>&1 || gh release create indice --latest=false \
             --title "Índice das coletas" --notes "Histórico das coletas (coletas.json). Atualizado automaticamente."
           gh release upload indice coleta/coletas.json --clobber
+
+      # O GitHub desativa agendamentos de repositórios públicos após 60 dias sem atividade.
+      # Reativar o workflow pela API (mesmo já ativo) reinicia essa contagem; como este
+      # workflow roda todo dia, a contagem nunca chega perto dos 60 dias.
+      - name: Mantém o agendamento ativo
+        if: always()
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/coleta.yml/enable"

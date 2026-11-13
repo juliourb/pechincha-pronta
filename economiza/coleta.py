@@ -197,6 +197,14 @@ def url_download(coleta: dict, nome: str) -> str:
     return _url(coleta["tag"], f"{nome}.parquet")
 
 
+def dias_desde_ultima_coleta(indice: list[dict]) -> int | None:
+    """Dias desde a última coleta real (ignora as de demonstração). ``None`` se não houver."""
+    datas = [c["data_coleta"] for c in indice if not c.get("demo") and c.get("data_coleta")]
+    if not datas:
+        return None
+    return (datetime.now(_FUSO).date() - datetime.fromisoformat(max(datas)).date()).days
+
+
 def tamanho_das_coletas(indice: list[dict]) -> pd.DataFrame:
     """Linhas e megabytes de cada coleta, por arquivo, para acompanhar o crescimento."""
     linhas = []

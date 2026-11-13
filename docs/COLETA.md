@@ -63,8 +63,26 @@ Sem o *secret*, o workflow apenas pula a coleta e deixa um aviso no resumo da ex
 falhar todo dia. Como segunda proteção, o script roda com `--exigir-token` e se recusa a
 publicar dados fictícios como se fossem reais.
 
-**Atenção:** o GitHub desativa workflows agendados em repositórios públicos após 60 dias sem
-nenhum commit. Se isso acontecer, aparece um aviso na aba Actions com um botão para reativar.
+## Como garantir que a coleta não pare
+
+O que pode fazer a coleta parar, e o que já está preparado para cada caso:
+
+| Risco | Proteção |
+|---|---|
+| O GitHub desativa agendamentos de repositórios públicos após **60 dias sem atividade** | O último passo do workflow reativa o agendamento pela API do GitHub a cada execução diária, o que reinicia a contagem. É a mesma técnica de ações populares de *keepalive*. |
+| O token da SEFAZ expira ou é revogado | A coleta falha (HTTP 401/403) e o GitHub envia **e-mail de falha** para você. Atualize o *secret* `ECONOMIZA_AL_TOKEN`. |
+| A API da SEFAZ fica fora do ar no dia | O workflow tenta de novo no dia seguinte, porque a última coleta continua com 10 dias ou mais. Perde-se no máximo um dia de notas. |
+| Mais da metade das consultas falha | A coleta não é publicada, para não gravar dados incompletos; a falha gera e-mail. |
+| Ninguém percebe que parou | A página Panorama mostra um aviso quando a última coleta tem mais de 12 dias, e o selo **coleta** no README fica vermelho quando a última execução falhou. |
+
+**Para receber os avisos por e-mail**, confira no GitHub em *Settings (do seu perfil) →
+Notifications → System → Actions* se a opção de notificar execuções com falha está ligada. Os
+avisos de workflows agendados vão para quem modificou o agendamento por último, no caso
+você, porque os commits estão no seu nome.
+
+**Se mesmo assim o agendamento for desativado**, a aba Actions mostra um aviso com o botão
+*Enable workflow*. As coletas já publicadas nunca se perdem: o histórico fica nas Releases,
+e o próximo dado entra assim que o workflow voltar a rodar. Só os dias parados ficam sem dado.
 
 ## Tamanho dos arquivos
 

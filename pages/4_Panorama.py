@@ -68,6 +68,11 @@ else:
     indice_visivel = indice
     st.caption(f"Notas fiscais dos {coleta.get('dias', 10)} dias anteriores a "
                f"{pd.Timestamp(coleta['data_coleta']).strftime('%d/%m/%Y')}.")
+    atraso = col.dias_desde_ultima_coleta(indice)
+    if atraso is not None and atraso > col.INTERVALO_DIAS + 2:
+        st.warning(f"A última coleta foi há **{atraso} dias** (o esperado é a cada {col.INTERVALO_DIAS}). "
+                   "A coleta automática pode ter parado: confira a aba Actions do repositório "
+                   "(veja docs/COLETA.md, seção \"Como garantir que a coleta não pare\").", icon="⏰")
 
 lojas, municipios = tabelas["lojas"], tabelas["municipios"]
 minimo = st.slider("Considerar municípios com pelo menos N lojas com a cesta completa", 1, 10, 3,

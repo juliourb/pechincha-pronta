@@ -1,6 +1,7 @@
 # Pechincha Pronta 🛒
 
 [![testes](https://github.com/juliourb/pechincha-pronta/actions/workflows/testes.yml/badge.svg)](https://github.com/juliourb/pechincha-pronta/actions/workflows/testes.yml)
+[![coleta](https://github.com/juliourb/pechincha-pronta/actions/workflows/coleta.yml/badge.svg)](https://github.com/juliourb/pechincha-pronta/actions/workflows/coleta.yml)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Streamlit](https://img.shields.io/badge/streamlit-app-FF4B4B)
 [![Licença: MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-green)](LICENSE)

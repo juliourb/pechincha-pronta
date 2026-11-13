@@ -80,3 +80,11 @@ def test_mapa_coropletico_com_malha_minima():
     html = mapa.get_root().render()
     assert "Macei" in html and "sem dados" in html
     assert legenda[-1][1] == "sem dados suficientes"
+
+
+def test_dias_desde_ultima_coleta_ignora_demo():
+    hoje = pd.Timestamp(col.hoje())
+    indice = [{"data_coleta": (hoje - pd.Timedelta(days=15)).date().isoformat()},
+              {"data_coleta": (hoje - pd.Timedelta(days=2)).date().isoformat(), "demo": True}]
+    assert col.dias_desde_ultima_coleta(indice) == 15
+    assert col.dias_desde_ultima_coleta([]) is None
