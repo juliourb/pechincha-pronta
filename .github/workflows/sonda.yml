@@ -1,0 +1,39 @@
+name: sonda-api
+
+# Diagnóstico: compara estratégias de consulta à API em poucos municípios (não publica nada).
+on:
+  workflow_dispatch:
+    inputs:
+      municipios:
+        description: "Municípios, separados por espaço (use _ no lugar de espaços no nome)"
+        default: "BATALHA PIRANHAS"
+      itens:
+        description: "Itens (opcional, separados por vírgula)"
+        default: ""
+
+jobs:
+  sonda:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Sonda
+        env:
+          ECONOMIZA_AL_TOKEN: ${{ secrets.ECONOMIZA_AL_TOKEN }}
+          MUNICIPIOS: ${{ inputs.municipios }}
+          ITENS: ${{ inputs.itens }}
+        run: |
+          pip install -q -r requirements.txt
+          python - <<'PY'
+          import os, subprocess, sys
+          mun = [m.replace("_", " ") for m in os.environ["MUNICIPIOS"].split()]
+          itens = [i.strip() for i in os.environ["ITENS"].split(",") if i.strip()]
+          cmd = [sys.executable, "scripts/sonda_api.py", "--municipios", *mun]
+          if itens:
+              cmd += ["--itens", *itens]
+          raise SystemExit(subprocess.call(cmd))
+          PY
