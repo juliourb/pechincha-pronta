@@ -12,8 +12,9 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from .cesta_basica import CABECA_CARNE, PROCESSADOS_CARNE, classificar_ofertas, gtin_valido
+from . import produtos
 from .municipios import normalizar
+from .produtos import CABECA_CARNE, PROCESSADOS_CARNE, RegrasProduto, com_chave_produto
 
 # Cortes bovinos desossados: frescos/refrigerados (0201.30.00) e congelados (0202.30.00).
 _RESFRIADA, _CONGELADA = "02013000", "02023000"
@@ -32,24 +33,16 @@ class Subfiltro:
 
 
 @dataclass(frozen=True)
-class ItemChurrasco:
+class ItemChurrasco(RegrasProduto):
+    """Item do churrasco: as regras do motor de produtos + quantidade sugerida e subfiltros."""
+
     nome: str
     ncms: tuple[str, ...]
     descricao_api: str  # termo enviado à API junto com o NCM
     unidade: str  # "kg" ou "L": a quantidade e o preço comparado usam esta unidade
     quantidade_padrao: float
     dica: str
-    exige: str | None = None
-    proibe: str | None = None
-    palavra: str | None = None  # nome do item na descrição (veja cesta_basica.ItemCesta)
-    cabeca: str | None = None   # palavras aceitas antes do nome ("CARNE BOVINA PICANHA")
-    ancorar: bool = False
-    tamanho_min: float | None = None
-    tamanho_max: float | None = None
     subfiltros: dict[str, Subfiltro] = field(default_factory=dict)
-    fatores_kg_para_dz: dict[str, float] = field(default_factory=dict)  # compatibilidade
-    peso_unitario_kg: float | None = None
-    gramas_implicitas: tuple[int, ...] = ()
 
 
 _FORMATOS_CERVEJA = {
@@ -107,53 +100,19 @@ CESTA_CHURRASCO: dict[str, ItemChurrasco] = {
 }
 
 
-def _chave_produto(linha) -> str:
-    """Identifica o produto: o código de barras quando existe; senão, a descrição."""
-    return f"gtin:{linha.gtin}" if gtin_valido(linha.gtin) else f"desc:{normalizar(linha.descricao)}"
-
-
 def classificar_churrasco(df: pd.DataFrame, pelo_codigo_de_barras: bool = False) -> pd.DataFrame:
-    """Converte cada oferta para R$/kg ou R$/L e marca as fora do item (ex.: picanha suína).
+    """Classifica as ofertas com o motor comum e acrescenta ``produto`` (a chave do catálogo).
 
-    Acrescenta ``produto``, a chave usada no catálogo. Com ``pelo_codigo_de_barras`` as
-    ofertas vieram de uma busca por GTIN e a descrição não precisa conter o nome do item.
+    Com ``pelo_codigo_de_barras`` as ofertas vieram de uma busca por GTIN e a descrição não
+    precisa conter o nome do item.
     """
-    ofertas = classificar_ofertas(df, CESTA_CHURRASCO, ignorar_especificacao=pelo_codigo_de_barras)
-    if "gtin" not in ofertas:
-        ofertas["gtin"] = pd.NA
-    ofertas["produto"] = [_chave_produto(l) for l in ofertas.itertuples(index=False)] if len(ofertas) else []
-    return ofertas
+    ofertas = produtos.classificar_ofertas(df, CESTA_CHURRASCO, ignorar_especificacao=pelo_codigo_de_barras)
+    return com_chave_produto(ofertas)
 
 
-def tamanho_legivel(tamanho: float, unidade: str) -> str:
-    """0.35 L -> '350 ml'; 5 kg -> '5 kg'; sem tamanho -> 'a granel'."""
-    if pd.isna(tamanho):
-        return "a granel"
-    if tamanho < 1:
-        return f"{tamanho * 1000:.0f} {'ml' if unidade == 'L' else 'g'}"
-    return f"{tamanho:g} {unidade}".replace(".", ",")
-
-
-def catalogo(ofertas: pd.DataFrame, item: str) -> pd.DataFrame:
-    """Produtos encontrados para um item: nome, tamanho, em quantas lojas e o menor preço.
-
-    O mesmo código de barras aparece com descrições diferentes em cada loja; o catálogo
-    junta tudo num produto só e usa a descrição mais comum como nome.
-    """
-    colunas = ["produto", "nome", "tamanho", "lojas", "menor_preco", "menor_preco_base", "rotulo"]
-    validas = ofertas[(ofertas["motivo"] == "ok") & (ofertas["item"] == item)]
-    if validas.empty:
-        return pd.DataFrame(columns=colunas)
-    unidade = CESTA_CHURRASCO[item].unidade
-    validas = validas.assign(_nome=validas["descricao"].map(normalizar))
-    cat = validas.groupby("produto").agg(
-        nome=("_nome", lambda s: s.mode().iloc[0]), tamanho=("tamanho_unitario", "median"),
-        lojas=("cnpj", "nunique"), menor_preco=("valor_declarado", "min"),
-        menor_preco_base=("preco_base", "min")).reset_index()
-    cat["rotulo"] = [
-        f"{r.nome} · {tamanho_legivel(r.tamanho, unidade)} · {r.lojas} loja{'s' if r.lojas > 1 else ''} · "
-        f"desde R$ {r.menor_preco:.2f}".replace(".", ",") for r in cat.itertuples()]
-    return cat.sort_values(["lojas", "nome"], ascending=[False, True]).reset_index(drop=True)[colunas]
+def catalogo(ofertas: pd.DataFrame, item: str, marca: str | None = None) -> pd.DataFrame:
+    """Produtos encontrados para um item do churrasco (motor comum: ``produtos.catalogo``)."""
+    return produtos.catalogo(ofertas, item, CESTA_CHURRASCO[item].unidade, marca)
 
 
 def _atende(linhas: pd.DataFrame, sub: Subfiltro) -> pd.Series:
@@ -173,32 +132,23 @@ def _atende(linhas: pd.DataFrame, sub: Subfiltro) -> pd.Series:
 
 
 def filtrar_ofertas(ofertas: pd.DataFrame, filtros: dict[str, dict] | None = None) -> pd.DataFrame:
-    """Aplica, item a item, o subfiltro escolhido e o texto de marca/descrição.
+    """Aplica, item a item, o subfiltro (formato), a marca e os produtos escolhidos.
 
-    ``filtros``: item -> {"subfiltro": nome ou None, "produtos": [chaves do catálogo],
-    "texto": "heineken" ou ""}. Todos opcionais.
+    ``filtros``: item -> {"subfiltro": nome ou None, "marca": "skol", "produtos": [chaves do
+    catálogo]}. Todos opcionais. Marca e produtos usam o motor comum (``produtos.filtrar_produtos``).
     """
     validas = ofertas[ofertas["motivo"] == "ok"]
-    if not filtros:
-        return validas
-    manter = pd.Series(True, index=validas.index)
-    for item, escolha in filtros.items():
+    for item, escolha in (filtros or {}).items():
         do_item = validas["item"] == item
         if not do_item.any():
             continue
-        linhas = validas[do_item]
-        ok = pd.Series(True, index=linhas.index)
         sub = CESTA_CHURRASCO[item].subfiltros.get(escolha.get("subfiltro") or "")
         if sub:
-            ok &= _atende(linhas, sub)
-        produtos = escolha.get("produtos")
-        if produtos:
-            ok &= linhas["produto"].isin(produtos)
-        texto = normalizar(escolha.get("texto"))
-        if texto:
-            ok &= linhas["descricao"].map(normalizar).str.contains(re.escape(texto), regex=True)
-        manter[linhas.index] = ok
-    return validas[manter]
+            linhas = validas[do_item]
+            validas = validas.drop(linhas.index[~_atende(linhas, sub)])
+        validas = produtos.filtrar_produtos(validas, item, escolha.get("produtos"),
+                                            escolha.get("marca") or escolha.get("texto"))
+    return validas
 
 
 def montar_carrinho(ofertas: pd.DataFrame, quantidades: dict[str, float]) -> pd.DataFrame:

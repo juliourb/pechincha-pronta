@@ -37,3 +37,21 @@ def test_coordenadas_fora_de_alagoas_sao_ignoradas_e_enquadramento_robusto():
     assert "-21.8" not in html and "invalidateSize" in html  # reenquadra quando a aba aparece
     (sul, oeste), (norte, leste) = limites_robustos(com_coordenadas(pontos))
     assert -9.63 < sul < norte < -9.59
+
+
+def test_enquadramento_padrao_e_alagoas_com_centro_e_zoom_definidos():
+    import re
+
+    import folium
+
+    from economiza.mapa import EXTENT_ALAGOAS, enquadrar, zoom_para
+
+    html = enquadrar(folium.Map()).get_root().render()
+    lat, lon = map(float, re.search(r"center: \[([-\d.]+), ([-\d.]+)\]", html).groups())
+    assert -10.0 < lat < -9.3 and -37.2 < lon < -36.2          # centro do estado, não [0, 0]
+    assert '"zoom": 8' in html and zoom_para(EXTENT_ALAGOAS) == 8
+    assert zoom_para([[-9.70, -35.86], [-9.49, -35.57]]) == 11  # uma cidade pede mais zoom
+    # mapa de pontos: centro nos pontos, sem depender do ajuste automático do navegador
+    html = criar_mapa(DF, "valor").get_root().render()
+    lat, lon = map(float, re.search(r"center: \[([-\d.]+), ([-\d.]+)\]", html).groups())
+    assert -9.75 < lat < -9.55 and -35.85 < lon < -35.65

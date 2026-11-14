@@ -33,31 +33,54 @@ def limites_robustos(pontos: pd.DataFrame) -> list[list[float]]:
     return [[lat.quantile(q[0]), lon.quantile(q[0])], [lat.quantile(q[1]), lon.quantile(q[1])]]
 
 
-def enquadrar(mapa: folium.Map, limites: list[list[float]], max_zoom: int = 16) -> folium.Map:
-    """Centraliza o mapa e corrige o enquadramento quando ele nasce numa aba escondida.
+# Enquadramento padrão: o estado de Alagoas inteiro ([[sul, oeste], [norte, leste]]).
+EXTENT_ALAGOAS = [[-10.52, -38.25], [-8.80, -35.14]]
+_LARGURA_PADRAO, _ALTURA_PADRAO = 700, 500  # tamanho típico do mapa na página, em pixels
 
-    O Leaflet calcula o zoom pelo tamanho do mapa; dentro de uma aba do Streamlit que ainda
-    não está visível esse tamanho é zero e o mapa abre deslocado. O script reenquadra quando
-    o mapa ganha tamanho (a aba é aberta) e logo após carregar.
+
+def zoom_para(limites: list[list[float]], max_zoom: int = 16) -> int:
+    """Zoom em que os limites cabem num mapa de tamanho típico (projeção Web Mercator)."""
+    import math
+
+    (sul, oeste), (norte, leste) = limites
+
+    def merc(lat: float) -> float:
+        return math.log(math.tan(math.pi / 4 + math.radians(lat) / 2))
+
+    fracao_lon = max((leste - oeste) / 360, 1e-9)
+    fracao_lat = max((merc(norte) - merc(sul)) / (2 * math.pi), 1e-9)
+    zoom = min(math.log2(_LARGURA_PADRAO / 256 / fracao_lon), math.log2(_ALTURA_PADRAO / 256 / fracao_lat))
+    return max(1, min(max_zoom, math.floor(zoom)))
+
+
+def enquadrar(mapa: folium.Map, limites: list[list[float]] | None = None, max_zoom: int = 16) -> folium.Map:
+    """Centraliza o mapa nos ``limites`` (padrão: Alagoas inteiro).
+
+    O centro e o zoom já saem calculados aqui, então o mapa abre no lugar certo mesmo que o
+    ajuste automático do Leaflet falhe (ele mede o mapa em pixels, e dentro de uma aba fechada
+    do Streamlit o tamanho é zero). Quando o mapa fica visível ou muda de tamanho, um script
+    refaz o ajuste fino.
     """
+    limites = limites or EXTENT_ALAGOAS
     (sul, oeste), (norte, leste) = limites
     mapa.location = [(sul + norte) / 2, (oeste + leste) / 2]
-    mapa.fit_bounds(limites, max_zoom=max_zoom)
+    mapa.options["zoom"] = zoom_para(limites, max_zoom)
+    mapa.options["center"] = mapa.location
     nome = mapa.get_name()
     js = f"""
     (function() {{
-        var mapa = {nome}, limites = {json.dumps(limites)}, largura = 0;
+        var mapa = {nome}, limites = {json.dumps(limites)}, ultima = 0;
         function ajustar() {{
+            var largura = mapa.getContainer().clientWidth;
+            if (largura === 0 || largura === ultima) {{ return; }}
+            ultima = largura;
             mapa.invalidateSize();
-            mapa.fitBounds(limites, {{maxZoom: {max_zoom}, padding: [20, 20]}});
+            mapa.fitBounds(limites, {{maxZoom: {max_zoom}, padding: [15, 15]}});
         }}
-        setTimeout(ajustar, 300);
-        window.addEventListener("resize", function() {{
-            var atual = mapa.getContainer().clientWidth;
-            mapa.invalidateSize();
-            if (largura === 0 && atual > 0) {{ ajustar(); }}
-            largura = atual;
-        }});
+        mapa.whenReady(function() {{ setTimeout(ajustar, 200); setTimeout(ajustar, 1200); }});
+        window.addEventListener("resize", ajustar);
+        if (window.ResizeObserver) {{ new ResizeObserver(ajustar).observe(mapa.getContainer()); }}
+        document.addEventListener("visibilitychange", ajustar);
     }})();
     """
     mapa.get_root().script.add_child(folium.Element(js))
@@ -162,7 +185,7 @@ def criar_mapa_coropletico(malha: dict, valores: pd.DataFrame, coluna: str, limi
         }
 
     mapa = folium.Map(tiles="OpenStreetMap", control_scale=True)
-    camada = folium.GeoJson(
+    folium.GeoJson(
         geo,
         style_function=lambda f: {"fillColor": f["properties"]["_cor"], "color": "#0e1117",
                                   "weight": 1, "fillOpacity": 0.9},
@@ -170,8 +193,7 @@ def criar_mapa_coropletico(malha: dict, valores: pd.DataFrame, coluna: str, limi
         tooltip=folium.GeoJsonTooltip(fields=["municipio", "valor", "lojas", "situacao"],
                                       aliases=["Município", rotulo, "Lojas com itens da cesta", "Situação"]),
     ).add_to(mapa)
-    (sul, oeste), (norte, leste) = camada.get_bounds()
-    enquadrar(tema_escuro(mapa), [[sul, oeste], [norte, leste]], max_zoom=12)
+    enquadrar(tema_escuro(mapa), EXTENT_ALAGOAS, max_zoom=12)  # sempre o estado inteiro
 
     def br(v: float) -> str:
         return f"{v:,.0f}".replace(",", ".")

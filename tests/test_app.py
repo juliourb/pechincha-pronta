@@ -59,10 +59,34 @@ def test_churrasco_subfiltro_de_formato():
     assert not at.exception
     assert at.metric[1].value != total_antes  # long neck é mais cara por litro
     # o catálogo lista os produtos long neck encontrados; escolher um restringe a cesta
-    catalogo_cerveja = at.multiselect(key="p_Cerveja_Long neck")
+    catalogo_cerveja = at.multiselect(key="p_Cerveja_Long neck_")
     assert catalogo_cerveja.options and all("LONG NECK" in o for o in catalogo_cerveja.options)
     catalogo_cerveja.select(catalogo_cerveja.options[0]).run()
     assert not at.exception
+
+
+def test_churrasco_filtro_por_marca():
+    at = AppTest.from_file(str(RAIZ / "pages/2_Churrasco.py"), default_timeout=T).run()
+    at.button[0].click().run()
+    todos = at.multiselect(key="p_Cerveja_Qualquer_").options
+    at.text_input(key="m_Cerveja_Qualquer").input("pilsen").run()
+    assert not at.exception
+    so_marca = at.multiselect(key="p_Cerveja_Qualquer_pilsen").options
+    assert 0 < len(so_marca) < len(todos) and all("PILSEN" in o for o in so_marca)
+    # só a marca, sem marcar produtos: a cesta usa apenas ofertas dessa marca
+    at.text_input(key="m_Cerveja_Qualquer").input("marca inexistente").run()
+    assert not at.exception and "Nenhuma oferta de **Cerveja**" in at.error[0].value
+
+
+def test_cesta_basica_usa_o_mesmo_filtro_de_produtos():
+    at = AppTest.from_file(str(RAIZ / "pages/3_Cesta_basica.py"), default_timeout=T).run()
+    at.button[0].click().run()
+    antes = at.metric[0].value
+    at.selectbox(key="item_filtro").set_value("Café em pó").run()
+    at.text_input(key="m_cb_Café em pó").input("500g").run()
+    assert not at.exception
+    assert any("Restrições ativas" in i.value for i in at.info)
+    assert at.metric[0].value != antes  # a cesta foi recalculada só com o café de 500 g
 
 
 def test_panorama_le_coletas_locais(tmp_path, monkeypatch):

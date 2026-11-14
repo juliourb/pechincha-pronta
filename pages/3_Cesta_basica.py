@@ -7,7 +7,8 @@ from economiza import graficos
 from economiza.api import DIAS_MAXIMO, filtrar_bairro
 from economiza.mapa import criar_mapa, para_geojson
 from economiza.municipios import codigo_ibge, nome_oficial, normalizar
-from economiza.ui import aviso_modo_demo, buscar_cesta_basica, rodape, seletor_municipio
+from economiza import produtos
+from economiza.ui import aviso_modo_demo, buscar_cesta_basica, rodape, seletor_municipio, seletor_produtos
 
 # Streamlit roda este arquivo de cima para baixo A CADA interação do usuário.
 # A lógica da cesta está em economiza/cesta_basica.py (sem Streamlit, testável e reutilizável).
@@ -63,6 +64,8 @@ if consultar:
     if not ofertas.empty:
         ofertas = cb.classificar_ofertas(ofertas)
         ofertas = ofertas[ofertas["motivo"] != "outro produto"]  # resultados da busca que não são o item
+        ofertas = produtos.com_chave_produto(ofertas)
+    st.session_state.pop("cb_restricoes", None)  # consulta nova: zera as restrições de marca
     st.session_state["cesta_basica"] = {"ofertas": ofertas,
                                         "falhas": falhas, "cidade": cidade, "bairro": bairro}
 
@@ -99,6 +102,24 @@ if not itens:
 cesta_completa = len(itens) == len(todos)
 if not cesta_completa:
     st.caption(f"⚠️ Cesta parcial ({len(itens)} de {len(todos)} itens): os valores não são comparáveis com o DIEESE.")
+
+# Mesmo filtro de produtos das outras páginas. Na cesta básica a marca não importa, então fica
+# recolhido: serve para simular a cesta com uma marca ou um produto específico.
+with st.expander("Restringir marcas ou produtos (opcional)"):
+    st.caption("Por padrão vale qualquer marca. Aqui dá para ver o que foi encontrado em cada item e, "
+               "se quiser, calcular a cesta só com uma marca ou com produtos específicos.")
+    item_filtro = st.selectbox("Item", itens, key="item_filtro")
+    escolha = seletor_produtos(ofertas, item_filtro, cb.ITENS_POR_NOME[item_filtro].unidade, f"cb_{item_filtro}")
+    restricoes = st.session_state.setdefault("cb_restricoes", {})
+    restricoes[item_filtro] = escolha
+    ativos = {i: r for i, r in restricoes.items() if i in itens and (r["marca"] or r["produtos"])}
+    if ativos:
+        st.info("Restrições ativas: " + "; ".join(
+            f"**{i}**: {r['marca'] or ''}{' + ' if r['marca'] and r['produtos'] else ''}"
+            f"{str(len(r['produtos'])) + ' produto(s)' if r['produtos'] else ''}" for i, r in ativos.items()))
+for item_restrito, r in st.session_state.get("cb_restricoes", {}).items():
+    if item_restrito in itens:
+        ofertas = produtos.filtrar_produtos(ofertas, item_restrito, r["produtos"], r["marca"])
 
 cestas = cb.cestas_por_estabelecimento(ofertas, itens)
 completas = cestas[cestas["completa"]]

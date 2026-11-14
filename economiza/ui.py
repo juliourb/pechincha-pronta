@@ -95,6 +95,26 @@ def buscar_cesta_basica(codigo_ibge: int, dias: int) -> tuple[pd.DataFrame, list
     return ofertas, falhas
 
 
+def seletor_produtos(ofertas: pd.DataFrame, item: str, unidade: str, chave: str) -> dict:
+    """Filtro de produtos igual em todas as páginas: marca (texto) + lista do que foi encontrado.
+
+    Devolve ``{"marca": texto, "produtos": [chaves]}``, pronto para ``produtos.filtrar_produtos``.
+    A marca reduz a lista; sem marcar nenhum produto, valem todos os que contêm a marca.
+    """
+    from . import produtos
+
+    c_marca, c_lista = st.columns([1, 3])
+    marca = c_marca.text_input("Marca", key=f"m_{chave}", placeholder="ex.: skol",
+                               help="Filtra pelo nome. Aceita mais de uma palavra, em qualquer ordem.")
+    cat = produtos.catalogo(ofertas, item, unidade, marca)
+    por_rotulo = dict(zip(cat["rotulo"], cat["produto"]))
+    vazio = "Nenhum produto com essa marca" if marca and cat.empty else (
+        f"Todos os {len(cat)} com \"{marca}\"" if marca else "Qualquer produto: usa o mais barato")
+    marcados = c_lista.multiselect(f"Produtos ({len(cat)} encontrados)", list(por_rotulo),
+                                   key=f"p_{chave}_{marca}", placeholder=vazio)
+    return {"marca": marca, "produtos": [por_rotulo[r] for r in marcados]}
+
+
 def rodape() -> None:
     st.divider()
     st.caption(

@@ -91,6 +91,9 @@ sardinha "com tomate", sabonete "café". A regra é:
 
 ### Mecanismos de acurácia
 
+Todas as camadas abaixo ficam em `economiza/produtos.py` e valem igualmente para a cesta básica,
+a cesta de churrasco e qualquer módulo novo.
+
 Identificar um produto pelo nome é um problema de classificação de texto. As camadas abaixo
 se somam; cada uma pega um tipo de erro diferente.
 

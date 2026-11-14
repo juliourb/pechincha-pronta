@@ -105,6 +105,31 @@ abre sem consultar a API. Para ativar, cadastre o token como *secret* `ECONOMIZA
 do repositório. Passo a passo, formato dos arquivos, consultas em SQL com DuckDB e projeção de
 tamanho: [docs/COLETA.md](docs/COLETA.md).
 
+## Como criar um módulo novo (outra cesta ou lista)
+
+Todas as páginas identificam produtos com o mesmo motor, `economiza/produtos.py`. Um módulo
+novo só declara os itens; as regras, as listas compartilhadas, o catálogo e o filtro por marca
+vêm prontos:
+
+```python
+from dataclasses import dataclass
+from economiza import produtos
+from economiza.ui import seletor_produtos
+
+@dataclass(frozen=True)
+class ItemLimpeza(produtos.RegrasProduto):   # herda palavra, proibe, faixa de embalagem...
+    nome: str
+    ncms: tuple
+    unidade: str
+
+ITENS = {"Sabão em pó": ItemLimpeza("Sabão em pó", ("34022000",), "kg",
+                                    palavra=r"SABAO", exige=r"\bPO\b", tamanho_min=0.4, tamanho_max=5)}
+
+ofertas = produtos.com_chave_produto(produtos.classificar_ofertas(df_da_api, ITENS))
+escolha = seletor_produtos(ofertas, "Sabão em pó", "kg", "sabao")          # marca + lista (Streamlit)
+ofertas = produtos.filtrar_produtos(ofertas, "Sabão em pó", escolha["produtos"], escolha["marca"])
+```
+
 ## Rodando localmente
 
 Requer Python 3.10 ou superior.
@@ -178,7 +203,7 @@ domínio, então não troque o endereço para `https://`.
 pytest -q
 ```
 
-São 131 testes, todos sem acesso à rede: cliente da API com respostas simuladas (paginação,
+São 137 testes, todos sem acesso à rede: cliente da API com respostas simuladas (paginação,
 erros HTTP, timeout), regras das cestas (incluindo as fórmulas do DIEESE conferidas com o
 boletim de Maceió), leitura de embalagens, mapa/GeoJSON, o script estadual e testes de ponta a ponta das páginas com
 `streamlit.testing` em modo demonstração. O GitHub Actions roda a suíte a cada push
@@ -194,6 +219,8 @@ pages/3_Cesta_basica.py   cesta básica (Decreto-Lei 399/1938)
 pages/4_Panorama.py       panorama estadual a partir das coletas guardadas
 economiza/                lógica reutilizável (sem Streamlit, exceto ui.py)
   api.py                  cliente da API Economiza Alagoas
+  produtos.py             motor de identificação de produtos, catálogo e filtro por marca
+                          (um só para todas as páginas)
   cesta.py                NCMs da cesta de churrasco e cálculo do menor total
   cesta_basica.py         metodologia e análises da cesta básica (sem Streamlit)
   graficos.py             gráficos plotly da cesta básica e do panorama
@@ -224,6 +251,7 @@ data/                     tabela NCM e dados auxiliares (SINESP) para estudos fu
 
 | Versão | O que mudou |
 |---|---|
+| 2.6 | **Motor de produtos único** (`economiza/produtos.py`) para todas as páginas, com filtro por **marca** no seletor de produtos (também na cesta básica). Mapas abrem enquadrados em Alagoas, com centro e zoom calculados. |
 | 2.5 | Acurácia da identificação de produtos: regra da "cabeça" da descrição (hambúrguer de picanha não é picanha), faixa de embalagem do varejo, consenso por código de barras e semelhança de texto para erros de digitação, nas duas cestas. |
 | 2.4 | **Cesta do município** (mediana de cada item entre as lojas, como no DIEESE): o Panorama passa de 15 para 73 municípios, com mapa também por item. Consultas sem NCM e regras revistas com o manual da API e uma sondagem real. Churrasco com **catálogo de produtos** (tamanho, lojas, preço) e busca por **código de barras**. Tema escuro. Datas convertidas de UTC para o horário local. |
 | 2.3 | Regras da cesta ajustadas com a 1ª coleta real (Maceió: R$ 660,27 vs. R$ 661,69 do DIEESE); reclassificação de coletas antigas; malha municipal guardada no repositório; mapas ignoram coordenadas fora de Alagoas e reenquadram ao abrir a aba. |
