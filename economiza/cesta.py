@@ -7,7 +7,6 @@ Assim dá para comparar lata com garrafa, saco de carvão de 3 kg com o de 5 kg,
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 
 import pandas as pd
