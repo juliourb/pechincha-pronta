@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 
 import pandas as pd
 
-from .cesta_basica import classificar_ofertas
+from .cesta_basica import CABECA_CARNE, PROCESSADOS_CARNE, classificar_ofertas, gtin_valido
 from .municipios import normalizar
 
 # Cortes bovinos desossados: frescos/refrigerados (0201.30.00) e congelados (0202.30.00).
@@ -41,6 +41,11 @@ class ItemChurrasco:
     dica: str
     exige: str | None = None
     proibe: str | None = None
+    palavra: str | None = None  # nome do item na descrição (veja cesta_basica.ItemCesta)
+    cabeca: str | None = None   # palavras aceitas antes do nome ("CARNE BOVINA PICANHA")
+    ancorar: bool = False
+    tamanho_min: float | None = None
+    tamanho_max: float | None = None
     subfiltros: dict[str, Subfiltro] = field(default_factory=dict)
     fatores_kg_para_dz: dict[str, float] = field(default_factory=dict)  # compatibilidade
     peso_unitario_kg: float | None = None
@@ -60,28 +65,31 @@ _CARNE = {
     "Congelada": Subfiltro(ncm=_CONGELADA),
     "Sem tempero": Subfiltro(proibe=r"TEMPERAD|MARINAD"),
 }
-_NAO_CARNE = r"SUIN|PORCO|FRANGO|HAMBURG|MOID|ALMONDEG|LINGUI"
+# Corte de churrasco: peça inteira ou fatiada. Carne moída e produtos feitos com o corte ficam fora.
+_NAO_CARNE = PROCESSADOS_CARNE + r"|MOID"
+_CORTE = dict(cabeca=CABECA_CARNE, proibe=_NAO_CARNE, tamanho_min=0.3, tamanho_max=10, subfiltros=_CARNE)
 
 CESTA_CHURRASCO: dict[str, ItemChurrasco] = {
     "Picanha": ItemChurrasco("Picanha", _BOVINO, "PICANHA", "kg", 1.0, "kg de carne",
-                             exige=r"PICANHA", proibe=_NAO_CARNE, subfiltros=_CARNE),
+                             palavra=r"PICANHA", **_CORTE),
     "Alcatra": ItemChurrasco("Alcatra", _BOVINO, "ALCATRA", "kg", 1.0, "kg de carne",
-                             exige=r"ALCATRA", proibe=_NAO_CARNE, subfiltros=_CARNE),
+                             palavra=r"ALCATRA", **_CORTE),
     "Fraldinha": ItemChurrasco("Fraldinha", _BOVINO, "FRALDINHA", "kg", 1.0, "kg de carne",
-                               exige=r"FRALD", proibe=_NAO_CARNE, subfiltros=_CARNE),
+                             palavra=r"FRALD", **_CORTE),
     "Cupim": ItemChurrasco("Cupim", _BOVINO, "CUPIM", "kg", 1.0, "kg de carne",
-                           exige=r"CUPIM", proibe=_NAO_CARNE, subfiltros=_CARNE),
+                             palavra=r"CUPIM", **_CORTE),
     "Coxão mole": ItemChurrasco("Coxão mole", _BOVINO, "COXAO MOLE", "kg", 1.0, "kg de carne",
-                                exige=r"\bCO?X(AO|\.)? ?MOLE|\bCHA (DE )?DENTRO", proibe=_NAO_CARNE,
-                                subfiltros=_CARNE),
+                                palavra=r"\bCO?X(AO|\.)? ?MOLE|\bCHA (DE )?DENTRO", **_CORTE),
     "Cerveja": ItemChurrasco("Cerveja", ("22030000",), "CERVEJA", "L", 4.2,
                              "litros (12 latas de 350 ml = 4,2 L)",
-                             exige=r"CERV|CHOPP|PILSEN", proibe=r"SEM ALCOOL|ZERO|0,0|\b0\.0",
+                             exige=r"CERV|CHOPP|PILSEN", proibe=r"SEM ALCOOL|ZERO|0,0|\b0\.0|SHAMP|SABON|COPO|CANECA|KIT",
+                             tamanho_min=0.2, tamanho_max=5,
                              subfiltros=_FORMATOS_CERVEJA),
     "Cerveja sem álcool": ItemChurrasco("Cerveja sem álcool", ("22029100",), "CERVEJA SEM ALCOOL", "L", 2.1,
                                         "litros (6 latas de 350 ml = 2,1 L)", subfiltros=_FORMATOS_CERVEJA),
     "Carvão": ItemChurrasco("Carvão", ("44029000",), "CARVAO", "kg", 3.0, "kg (um saco comum tem 3 a 5 kg)",
-                            exige=r"CARV", subfiltros={
+                            exige=r"CARV", proibe=r"ACEND|GRELHA|CHURRASQ|ATIVADO|FILTRO|PASTILHA", tamanho_min=1, tamanho_max=20,
+                            subfiltros={
                                 "Saco até 3 kg": Subfiltro(tamanho_max=3.0),
                                 "Saco de 4 kg ou mais": Subfiltro(tamanho_min=4.0)}),
     "Farofa": ItemChurrasco("Farofa", ("19019090",), "FAROFA", "kg", 0.5, "kg (pacote comum: 250 a 500 g)",
@@ -97,12 +105,6 @@ CESTA_CHURRASCO: dict[str, ItemChurrasco] = {
                                        "Espeto / palito": Subfiltro(exige=r"ESPET|SPETO|PALITO|\bESP\b"),
                                        "Barra / peça": Subfiltro(proibe=r"ESPET|SPETO|PALITO|\bESP\b")}),
 }
-
-
-def gtin_valido(gtin) -> bool:
-    """Código de barras de verdade: 8 a 14 dígitos (as notas trazem também 'SEM GTIN')."""
-    texto = str(gtin) if gtin is not None and not pd.isna(gtin) else ""
-    return texto.isdigit() and 8 <= len(texto) <= 14 and int(texto) > 0
 
 
 def _chave_produto(linha) -> str:

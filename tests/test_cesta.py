@@ -110,3 +110,21 @@ def test_filtro_por_produto_e_busca_por_codigo_de_barras():
     crua = pd.DataFrame([{**oferta("D", "Cerveja", "MARCA X LN 330ML", 5.0), "gtin": "7891234567890"}])
     assert classificar_churrasco(crua)["motivo"].item() == "fora da especificação"
     assert classificar_churrasco(crua, pelo_codigo_de_barras=True)["motivo"].item() == "ok"
+
+
+@pytest.mark.parametrize("descricao, um, esperado", [
+    # exemplos reais do catálogo de Picanha
+    ("HAMB MATURATTA BOV PICANHA 180G", "UN", "outro produto"),
+    ("HAMB BOV CG PERDIGAO 150G PICANHA NABRASA", "UN", "outro produto"),
+    ("CARNE BOVINA PICANHA KG", "KG", "ok"),
+    ("CARNE PICANHA KG", "KG", "ok"),
+    ("PICANHA BOVINA KG", "KG", "ok"),
+    ("BV PICANHA B KG", "KG", "ok"),
+    ("PICANHA GRILL KG", "KG", "ok"),
+    ("LING TOSCANA SABOR PICANHA 500G", "UN", "outro produto"),
+    ("PICANHA SUINA TEMPERADA KG", "KG", "fora da especificação"),
+    ("KIT CHURRASCO PICANHA 1KG", "UN", "outro produto"),
+])
+def test_picanha_nao_aceita_produtos_feitos_com_picanha(descricao, um, esperado):
+    of = classificar_churrasco(pd.DataFrame([oferta("A", "Picanha", descricao, 60.0, um, "02013000")]))
+    assert of["motivo"].item() == esperado

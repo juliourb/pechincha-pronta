@@ -89,6 +89,38 @@ sardinha "com tomate", sabonete "café". A regra é:
 - o que não passa é "outro produto" e nem é guardado; o que é o item mas de outro tipo
   (arroz parboilizado, leite desnatado) fica guardado como "fora da especificação".
 
+### Mecanismos de acurácia
+
+Identificar um produto pelo nome é um problema de classificação de texto. As camadas abaixo
+se somam; cada uma pega um tipo de erro diferente.
+
+| Camada | O que resolve | Exemplo |
+|---|---|---|
+| **Palavra do item** (com abreviações) | A busca da API traz produtos que só citam o termo | biscoito "manteiga" não é manteiga |
+| **Cabeça da descrição** | Produto *feito com* o item: o nome do item aparece, mas a primeira palavra é outra | "HAMB BOV PICANHA 180G", "LING SABOR PICANHA", "CARNE DO SOL COXAO MOLE" |
+| **Lista de exclusão por tipo** | É o item, mas de outro tipo | arroz parboilizado, leite desnatado, café solúvel |
+| **NCM como reforço** | Com o NCM certo, a regra é mais tolerante; com NCM errado, mais rígida | "FARINHA PINHEIRO" só vale com NCM de farinha de mandioca |
+| **Faixa de embalagem do varejo** | Sachês e atacado distorcem o preço por kg | açúcar de 5 g ou saco de 50 kg, arroz de 30 kg |
+| **Consenso por código de barras** | Lojas descrevem o mesmo produto de formas diferentes; a decisão passa a ser a da maioria | "ACUC DEM PINDOR" (demerara abreviado) rejeitado porque as outras lojas escrevem "DEMERARA" |
+| **Semelhança de texto (*fuzzy*)** | Erros de digitação no nome do item | "MANTEGA" aceita como manteiga; "BANANADA" não passa por banana |
+| **Preço atípico** | Erro de cadastro ou de leitura do tamanho | preço por kg 3 vezes acima ou abaixo da mediana do item |
+
+**Sobre *fuzzy matching*:** medir semelhança entre textos corrige grafias diferentes da *mesma*
+palavra. Ele não resolve o caso do hambúrguer de picanha, porque ali a palavra está escrita
+certa: o problema é de sentido (qual é o produto e qual é o ingrediente). Por isso o *fuzzy*
+entra só para erros de digitação, e o caso do hambúrguer é tratado pela regra da cabeça.
+
+**Auditoria na 1ª coleta (30,5 mil ofertas aceitas):** nenhum hambúrguer, molho ou extrato entre
+os aceitos da cesta básica. As camadas novas mudaram a decisão de 2% das ofertas: 84 embalagens
+fora do varejo, cerca de 200 rejeições pelo consenso do código de barras e pela cabeça da
+descrição. O valor da cesta mudou menos de 0,1%. O erro do hambúrguer estava na cesta de
+churrasco, que tinha regras mais simples e agora usa as mesmas camadas.
+
+**Limite:** as regras são listas mantidas à mão. A aba *Diagnóstico* de cada cesta mostra o que
+foi aceito e descartado, e serve para encontrar casos novos. Um passo seguinte possível é
+classificar as descrições distintas com um modelo de linguagem e guardar o resultado como
+dicionário revisado.
+
 ## 3. Cesta do município
 
 Para comparar municípios, a cesta **não exige que uma única loja venda tudo**. Como no DIEESE,

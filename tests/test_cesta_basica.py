@@ -181,7 +181,22 @@ def test_consultas_so_pelo_termo():
     ("Pão francês", "FP PAO FRANCES A KG", "19012010", "ok"),
     ("Banana", "BANANA  PRATA KG", "07051100", "ok"),               # NCM de alface, banana de verdade
     ("Carne", "CARNE BV PATINHO", "02102000", "ok"),
-    ("Carne", "CARNE BOVINA OSSO DO PATINHO KG", "02013000", "fora da especificação"),
+    ("Carne", "CARNE BOVINA OSSO DO PATINHO KG", "02013000", "outro produto"),
+    # "cabeça" da descrição: o que vem antes do corte precisa ser neutro
+    ("Carne", "HAMB BOV PATINHO 180G", "02013000", "outro produto"),
+    ("Carne", "BV BIFE DE PATINHO KG", "02013000", "ok"),
+    ("Carne", "BV CARNE MOIDA PATINHO KG", "02013000", "ok"),
+    ("Carne", "PATINHO TEMPERADO KG", "02013000", "fora da especificação"),
+    ("Carne", "CARNE BOV. PATINHO KG", "02013000", "ok"),            # pontuação na cabeça
+    ("Carne", "BOV.COXAO MOLE RESER", "02013000", "ok"),
+    ("Carne", "CARNE DO SOL BOV COXAO MOLE KG", "02013000", "outro produto"),  # carne de sol é outro produto
+    ("Açúcar", "ACUC DEM PINDOR 1kg", "17019900", "fora da especificação"),
+    # erro de digitação aceito por semelhança; palavra parecida de outro produto, não
+    ("Manteiga", "MANTEGA DA TERRA 200G", "04051000", "ok"),
+    ("Banana", "BANANADA CASEIRA 300G", "20079990", "outro produto"),
+    # molho e extrato de tomate, com NCM certo ou errado
+    ("Tomate", "MOLHO DE TOMATE TRADICIONAL 300G", "20029000", "outro produto"),
+    ("Tomate", "TOMATE MOLHO PRONTO 300G", "07020000", "fora da especificação"),
     ("Óleo", "OLEO DE SOJA SIOL 500ML", "15071000", "ok"),
     # falsos positivos vistos na 2ª sondagem
     ("Arroz", "ARROZ P CAES BOBY 5KG", "10064000", "fora da especificação"),
@@ -199,3 +214,26 @@ def test_remover_duplicadas_entre_termos():
     linha = {"item": "Carne", "cnpj": "1", "descricao": "PATINHO COXAO KG",
              "data_venda": pd.Timestamp("2026-11-01"), "valor_declarado": 40.0}
     assert len(cb.remover_duplicadas(pd.DataFrame([linha, linha]))) == 1
+
+
+def test_embalagem_fora_do_varejo_e_descartada():
+    linhas = [oferta(c, "Açúcar", d, p) for c, d, p in [
+        ("A", "ACUCAR CRISTAL 1KG", 4.0), ("B", "ACUCAR CRISTAL 2KG", 8.0), ("C", "ACUCAR CRISTAL 1KG", 4.2),
+        ("D", "ACUCAR CRISTAL SACO 50KG", 180.0), ("E", "ACUCAR CRISTAL 5G", 0.05)]]
+    motivos = cb.classificar_ofertas(pd.DataFrame(linhas)).set_index("cnpj")["motivo"]
+    assert motivos["A"] == motivos["B"] == "ok"
+    assert motivos["D"] == motivos["E"] == "embalagem fora do varejo"
+
+
+def test_voto_por_codigo_de_barras_uniformiza_a_decisao():
+    # mesmo código de barras: 3 lojas descrevem como desnatado, 1 esquece de dizer
+    linhas = [oferta(c, "Leite", d, 6.0) for c, d in [
+        ("A", "LEITE UHT DESNATADO X 1L"), ("B", "LEITE UHT DESN X 1L"), ("C", "LEITE DESNATADO X UHT 1L"),
+        ("D", "LEITE UHT X 1L")]]
+    for l in linhas:
+        l["gtin"] = "7891111111111"
+    outra = oferta("E", "Leite", "LEITE UHT Y 1L", 6.0)
+    outra["gtin"] = "SEM GTIN"
+    motivos = cb.classificar_ofertas(pd.DataFrame(linhas + [outra])).set_index("cnpj")["motivo"]
+    assert motivos["D"] == "fora da especificação"  # corrigido pelo consenso
+    assert motivos["E"] == "ok"                      # sem código de barras: vale a regra do texto

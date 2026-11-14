@@ -55,6 +55,14 @@ class ItemCesta:
     # termo (biscoito "manteiga", sardinha "com tomate").
     palavra: str | None = None
     ancorar: bool = True  # False: a palavra pode vir em qualquer posição mesmo com NCM errado
+    # "Cabeça" da descrição: regex das palavras que podem vir ANTES da palavra do item. Se houver
+    # outra (HAMB, LING, KIT...), o produto é outra coisa feita com o item ("HAMB BOV PICANHA").
+    cabeca: str | None = None
+    # Grafias corretas da palavra, para aceitar erros de digitação ("MANTEGA") por semelhança.
+    canonico: tuple[str, ...] = ()
+    # Faixa plausível do tamanho unitário no varejo (kg ou L). Fora dela: sachê ou atacado.
+    tamanho_min: float | None = None
+    tamanho_max: float | None = None
     fatores_kg_para_dz: dict[str, float] = field(default_factory=dict)  # só banana
     # Termos enviados à API (sem NCM: lojas pequenas cadastram NCM errado com frequência).
     termos: tuple[str, ...] = ()
@@ -64,68 +72,87 @@ class ItemCesta:
     gramas_implicitas: tuple[int, ...] = ()
 
 
+# Palavras que podem vir antes do nome de um corte de carne sem mudar o que o produto é.
+CABECA_CARNE = (r"CARNES?|BOVIN[AO]S?|BOV|BV|RES|RESF\w*|CONG\w*|FRESC\w*|PECA|CORTE|BIFES?|ISCAS?|MOID[AO]|"
+                r"DE|DA|DO|EM|AC|ACOUGUE|KG|FRIBOI|BF|LIGHT|ESTROG\w*|\d+")
+# Produtos feitos COM carne (ou outra carne): nunca são o corte. Inclui abreviações comuns.
+PROCESSADOS_CARNE = (r"HAMB|LING|ALMOND|ESPET|\bKIT\b|TEMP|EMPAN|MARIN|DEFUM|CHARQUE|SALG|SUIN|\bSUI\b|PORCO|"
+                     r"FRANGO|\bFGO\b|CORDEIRO|OSSO|STEAK|NUGGET|CALDO|MOLHO|RECHE|PASTEL|PIZZA|SABOR|RACAO")
+
+
 # Região 2 do Decreto-Lei 399/1938 (inclui Alagoas). Ordem igual à tabela do DIEESE.
 ITENS_REGIAO_2: tuple[ItemCesta, ...] = (
     ItemCesta("Carne", ("02013000", "02023000"), 4.5, "kg", "4,5 kg",
               "Carne bovina de primeira: coxão mole, coxão duro ou patinho, sem osso",
               palavra=r"PATINHO|\bCO?X(AO|\.)? ?(MOLE|DURO)|\bCHA (DE )?(DENTRO|FORA)", ancorar=False,
-              proibe=r"OSSO|HAMBURG|SUIN|PORCO|FRANGO|CHARQUE|TEMPERAD|ALMONDEG|LINGUI",
+              cabeca=CABECA_CARNE, proibe=PROCESSADOS_CARNE, tamanho_min=0.3, tamanho_max=5,
               termos=("PATINHO", "COXAO", "CHA DENTRO", "CHA FORA")),
     ItemCesta("Leite", ("04012010", "04011010"), 6.0, "L", "6,0 L", "Leite integral UHT",
               palavra=r"LEITE?\b", exige=r"INTEGRAL|\bINT\b|\bUHT\b|LONGA VIDA",
               proibe=r"SEMI|\bDESN|\bPO\b|CONDENS|FERMENT|ACHOC|COMPOSTO|BEBIDA|ZERO|\bZR\b|LACTOSE|\bLAC\b|"
                      r"COCO|SOJA|CABRA|AVEIA|AMEND|CHOC|MORANG|CREME|DOCE|PROTEIN|KIDS|SABOR",
+              canonico=("LEITE",), tamanho_min=0.5, tamanho_max=2,
               termos=("LEITE",)),
     ItemCesta("Feijão", ("07133399", "07133319"), 4.5, "kg", "4,5 kg", "Feijão carioca",
               palavra=r"FEIJ(AO)?\b", exige=r"CARIOC", proibe=r"PRONTO|TEMPERAD|COZIDO|LATA",
+              canonico=("FEIJAO",), tamanho_min=0.5, tamanho_max=5,
               termos=("FEIJAO",)),
     ItemCesta("Arroz", ("10063021",), 3.6, "kg", "3,6 kg",
               "Arroz agulhinha tipo 1 (branco, não parboilizado)",
               palavra=r"ARROZ\b",
               proibe=r"PARB|INTEGRAL|\bINT\b|ARBORIO|JAPON|CATETO|NEGRO|VERMELHO|7 GRAOS|DOCE|PRONTO|TEMPERAD|"
                      r"RISOTO|CAES|\bCAO\b|CACHORRO|GATO|\bPET\b|BOBY|AMIGACO|ARROZCAO|QUIRERA|QUEBRADO",
+              canonico=("ARROZ",), tamanho_min=0.5, tamanho_max=5,
               termos=("ARROZ",)),
     ItemCesta("Farinha", ("11062000",), 3.0, "kg", "3,0 kg", "Farinha de mandioca",
               palavra=r"FARI(NHA)?\b",
               proibe=r"TAPIOCA|GOMA|POLVILHO|CARIMA|PUBA|FECULA|TRIGO|ROSCA|AVEIA|MILHO|ARROZ|EMPANAR|PANKO|"
                      r"LACTEA|LINHACA|COCO|AMENDOA|CENTEIO|SOJA|BICO|BERINJ|MARACUJ|BANANA|CEVADA|QUIBE",
               exige_sem_ncm=r"MANDIOCA|\bMAND\b|D ?AGUA|AMARELA|BRANCA|\bMESA\b",
+              canonico=("FARINHA",), tamanho_min=0.5, tamanho_max=5,
               termos=("FARINHA",)),
     ItemCesta("Tomate", ("07020000",), 12.0, "kg", "12,0 kg", "Tomate (comum)",
               palavra=r"TOMATES?\b",
               proibe=r"CEREJA|GRAPE|SWEET|MOLHO|EXTRATO|\bEXT\b|POLPA|SECO|PELADO|ITALIAN|ORGANIC|HOLAND",
+              canonico=("TOMATE",), tamanho_min=0.3, tamanho_max=2,
               termos=("TOMATE",)),
     ItemCesta("Pão francês", ("19059090", "19012010"), 6.0, "kg", "6,0 kg", "Pão francês (carioquinha)",
               palavra=r"PAO\b", exige=r"FRANC|CARIOQ|\bSAL\b",
               proibe=r"INTEGRAL|TORRADA|\bMINI\b|PRE ?ASSAD|RECHE|DOCE|BRIOCHE|QUEIJO|SABORIZ|CONGELAD",
               peso_unitario_kg=0.05,  # pão francês padrão: 50 g
+              tamanho_min=0.04, tamanho_max=1.5,
               termos=("PAO FRANCES",)),
     ItemCesta("Café em pó", ("09012100",), 0.3, "kg", "300 g", "Café torrado e moído",
               palavra=r"CAFE?\b",
               proibe=r"GRAO|^CAPS?\b|\bCAPS\b|CAPSULA|SACHE|DESCAF|SOLUV|\bSOL\b|DOLCE|GUSTO|NESCAFE|CAPP|C LEITE|"
                      r"COM LEITE|C ?/? ?LEIT|\bDESC\b|DECAF|\bREFIL\b|GRANUL|\bGRAN\b|EXPRESSO|DRIP|GELADO|PRONTO",
               gramas_implicitas=(250, 500, 1000),
+              tamanho_min=0.1, tamanho_max=1,
               termos=("CAFE",)),
     ItemCesta("Banana", ("08039000", "08031000"), 7.5, "dz", "90 unid (7,5 dz)", "Banana prata ou nanica",
               palavra=r"BANANAS?\b", exige=r"PRATA|PACOVAN|NANICA|CATURRA|D.?AGUA",
               proibe=r"PASSA|DOCE|CHIPS|PALMA|CACHO|MACA|TERRA|COMPRIDA|DESIDRAT",
               # pacovan é uma variedade de banana prata
               fatores_kg_para_dz={"PRATA": 1.2, "PACOVAN": 1.2, "NANICA": 1.8, "CATURRA": 1.8, "AGUA": 1.8},
+              canonico=("BANANA",),
               termos=("BANANA",)),
     ItemCesta("Açúcar", ("17019900", "17011400"), 3.0, "kg", "3,0 kg", "Açúcar cristal",
               palavra=r"ACUC(AR)?\b",
-              proibe=r"DEMERARA|MASCAVO|REFIN|CONFEIT|LIGHT|DIET|SACHE|GLAC|LIQUID|MELADO|STEVIA|ADOC|"
+              proibe=r"DEMER|\bDEM\b|MASCAVO|REFIN|\bREF\b|CONFEIT|LIGHT|DIET|SACHE|GLAC|LIQUID|MELADO|STEVIA|ADOC|"
                      r"VEGAN|IMPALPAVEL|CUBO|COCO|ORGANIC|BAUNILHA",
+              canonico=("ACUCAR",), tamanho_min=0.5, tamanho_max=5,
               termos=("ACUCAR",)),
     ItemCesta("Óleo", ("15079011", "15071000"), round(0.75 / DENSIDADE_OLEO, 3), "L", "750 g (≈ 0,815 L)",
               "Óleo de soja refinado", palavra=r"OLEO\b", exige=r"SOJA",
               proibe=r"COMPOSTO|MISTO|MOTOR|LUBRIF",
+              tamanho_min=0.45, tamanho_max=2,
               termos=("OLEO SOJA",)),
     ItemCesta("Manteiga", ("04051000",), 0.75, "kg", "750 g", "Manteiga",
               palavra=r"MANT(EIGA)?\b",
               proibe=r"MARGARINA|GARRAFA|CACAU|AMENDOIM|KARITE|CORPORAL|GHEE|BISC|\bBASE\b|\bALIM|COCO|"
                      r"\bVEG|SABOR|ERVAS",
               gramas_implicitas=(200, 500),
+              canonico=("MANTEIGA",), tamanho_min=0.1, tamanho_max=1,
               termos=("MANTEIGA",)),
 )
 ITENS_POR_NOME = {i.nome: i for i in ITENS_REGIAO_2}
@@ -146,6 +173,17 @@ def nucleo(descricao: str) -> str:
     return _PREFIXOS.sub("", normalizar(descricao))
 
 
+def _parecida(token: str, canonicos: tuple[str, ...]) -> bool:
+    """Semelhança de texto (fuzzy) só para erros de digitação: 'MANTEGA' ~ 'MANTEIGA'.
+
+    Exige palavras de tamanho quase igual, para 'BANANADA' não passar por 'BANANA'.
+    """
+    from difflib import SequenceMatcher
+
+    return any(len(token) >= 5 and abs(len(token) - len(c)) <= 1
+               and SequenceMatcher(None, token, c).ratio() >= 0.85 for c in canonicos)
+
+
 def avaliar_descricao(item, descricao: str, ncm=None) -> str:
     """'ok', 'outro produto' (não é o item) ou 'fora da especificação' (é o item, de outro tipo)."""
     d = nucleo(descricao)
@@ -153,8 +191,16 @@ def avaliar_descricao(item, descricao: str, ncm=None) -> str:
     ncm_correto = str(ncm) in item.ncms
     if palavra:
         inicio = r"\b" if ncm_correto or not getattr(item, "ancorar", True) else "^"
-        if not re.search(f"{inicio}(?:{palavra})", d):
-            return "outro produto"
+        achou = re.search(f"{inicio}(?:{palavra})", d)
+        if not achou:
+            tokens = d.split()[: (4 if ncm_correto else 1)]
+            if not any(_parecida(t, getattr(item, "canonico", ())) for t in tokens):
+                return "outro produto"
+        cabeca = getattr(item, "cabeca", None)
+        if achou and cabeca:  # o que vem antes do nome do item precisa ser "neutro"
+            antes = [re.sub(r"[^A-Z0-9]", "", t) for t in re.split(r"[\s./-]+", d[: achou.start()])]
+            if any(t and not re.fullmatch(cabeca, t) for t in antes):
+                return "outro produto"
     exige = item.exige if isinstance(item.exige, tuple) else ((item.exige,) if item.exige else ())
     if any(not re.search(e, d) for e in exige):
         return "fora da especificação"
@@ -164,6 +210,37 @@ def avaliar_descricao(item, descricao: str, ncm=None) -> str:
     if extra and not ncm_correto and not re.search(extra, d):
         return "fora da especificação"
     return "ok"
+
+
+def gtin_valido(gtin) -> bool:
+    """Código de barras de verdade: 8 a 14 dígitos (as notas trazem também 'SEM GTIN')."""
+    texto = str(gtin) if gtin is not None and not pd.isna(gtin) else ""
+    return texto.isdigit() and 8 <= len(texto) <= 14 and int(texto) > 0
+
+
+def voto_por_codigo_de_barras(dados: pd.DataFrame, minimo: int = 3, maioria: float = 0.7) -> pd.Series:
+    """Consenso por código de barras: o mesmo produto recebe a mesma decisão em todas as lojas.
+
+    Cada loja descreve o produto do seu jeito, e a regra por texto pode aceitar uma descrição e
+    rejeitar outra do MESMO código de barras. Com ``minimo`` ofertas ou mais, se ``maioria`` delas
+    foi rejeitada pelo texto, as demais também são; se foi aceita, as "outro produto" são resgatadas.
+    Devolve os motivos corrigidos.
+    """
+    motivos = dados["motivo"].copy()
+    if "gtin" not in dados:
+        return motivos
+    textual = motivos.isin(["ok", "outro produto", "fora da especificação"])
+    validos = dados["gtin"].map(gtin_valido) & textual
+    if not validos.any():
+        return motivos
+    grupo = dados.loc[validos].groupby(["item", "gtin"], observed=True)["motivo"]
+    total = grupo.transform("size")
+    aceitas = grupo.transform(lambda m: (m == "ok").mean())
+    rejeitar = (total >= minimo) & (aceitas <= 1 - maioria) & (motivos[validos] == "ok")
+    resgatar = (total >= minimo) & (aceitas >= maioria) & (motivos[validos] == "outro produto")
+    motivos.loc[rejeitar[rejeitar].index] = "fora da especificação"
+    motivos.loc[resgatar[resgatar].index] = "ok"
+    return motivos
 
 
 def remover_duplicadas(ofertas: pd.DataFrame) -> pd.DataFrame:
@@ -294,18 +371,25 @@ def classificar_ofertas(df: pd.DataFrame, itens: dict | None = None,
     # Preço de referência: o valor unitário declarado na nota ("preço de prateleira").
     dados["preco"] = dados["valor_declarado"].fillna(dados["valor_venda"])
     precos, motivos = [], []
-    for linha in dados.itertuples(index=False):
+    situacoes = [("ok" if ignorar_especificacao else avaliar_descricao(itens[l.item], l.descricao, getattr(l, "ncm", None)))
+                 for l in dados.itertuples(index=False)]
+    dados["motivo"] = situacoes
+    if not ignorar_especificacao:
+        dados["motivo"] = voto_por_codigo_de_barras(dados)
+    tamanhos = dados["descricao"].map(embalagem)
+    dados["tamanho_unitario"] = tamanhos.map(lambda e: e[1] if e else np.nan)
+    for linha, situacao, tamanho in zip(dados.itertuples(index=False), dados["motivo"], dados["tamanho_unitario"]):
         item = itens[linha.item]
-        desc = nucleo(linha.descricao)
-        situacao = "ok" if ignorar_especificacao else avaliar_descricao(item, linha.descricao, getattr(linha, "ncm", None))
         if situacao != "ok":
             precos.append(None); motivos.append(situacao)
             continue
-        p, motivo = preco_unidade_base(item, desc, linha.unidade_medida, linha.preco)
+        minimo, maximo = getattr(item, "tamanho_min", None), getattr(item, "tamanho_max", None)
+        if pd.notna(tamanho) and ((minimo and tamanho < minimo) or (maximo and tamanho > maximo)):
+            precos.append(None); motivos.append("embalagem fora do varejo")
+            continue
+        p, motivo = preco_unidade_base(item, nucleo(linha.descricao), linha.unidade_medida, linha.preco)
         precos.append(p); motivos.append(motivo)
     dados["preco_base"] = pd.to_numeric(pd.Series(precos, index=dados.index), errors="coerce")
-    tamanhos = dados["descricao"].map(embalagem)
-    dados["tamanho_unitario"] = tamanhos.map(lambda e: e[1] if e else np.nan)
     dados["motivo"] = motivos
 
     # Preços atípicos (erro de cadastro ou de leitura do tamanho), item a item.

@@ -178,7 +178,7 @@ domínio, então não troque o endereço para `https://`.
 pytest -q
 ```
 
-São 101 testes, todos sem acesso à rede: cliente da API com respostas simuladas (paginação,
+São 131 testes, todos sem acesso à rede: cliente da API com respostas simuladas (paginação,
 erros HTTP, timeout), regras das cestas (incluindo as fórmulas do DIEESE conferidas com o
 boletim de Maceió), leitura de embalagens, mapa/GeoJSON, o script estadual e testes de ponta a ponta das páginas com
 `streamlit.testing` em modo demonstração. O GitHub Actions roda a suíte a cada push
@@ -224,6 +224,7 @@ data/                     tabela NCM e dados auxiliares (SINESP) para estudos fu
 
 | Versão | O que mudou |
 |---|---|
+| 2.5 | Acurácia da identificação de produtos: regra da "cabeça" da descrição (hambúrguer de picanha não é picanha), faixa de embalagem do varejo, consenso por código de barras e semelhança de texto para erros de digitação, nas duas cestas. |
 | 2.4 | **Cesta do município** (mediana de cada item entre as lojas, como no DIEESE): o Panorama passa de 15 para 73 municípios, com mapa também por item. Consultas sem NCM e regras revistas com o manual da API e uma sondagem real. Churrasco com **catálogo de produtos** (tamanho, lojas, preço) e busca por **código de barras**. Tema escuro. Datas convertidas de UTC para o horário local. |
 | 2.3 | Regras da cesta ajustadas com a 1ª coleta real (Maceió: R$ 660,27 vs. R$ 661,69 do DIEESE); reclassificação de coletas antigas; malha municipal guardada no repositório; mapas ignoram coordenadas fora de Alagoas e reenquadram ao abrir a aba. |
 | 2.2 | Página **Panorama de Alagoas** e coleta automática a cada 10 dias (GitHub Actions + Parquet em Releases), com histórico, mapa coroplético e acompanhamento do tamanho dos dados. Nomes dos municípios com a grafia oficial. |
