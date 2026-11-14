@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from economiza.cesta import (CESTA_CHURRASCO, classificar_churrasco, filtrar_ofertas, montar_carrinho,
+from economiza.cesta import (CESTA_CHURRASCO, catalogo, classificar_churrasco, filtrar_ofertas, montar_carrinho,
                              total_por_estabelecimento)
 
 
@@ -86,3 +86,27 @@ def test_sem_dados_devolve_vazio():
     assert montar_carrinho(filtrar_ofertas(OFERTAS), {"Picanha": 1, "Farofa": 1}).empty
     vazio = montar_carrinho(OFERTAS.iloc[0:0], {"Picanha": 1})
     assert total_por_estabelecimento(vazio, OFERTAS).empty
+
+
+def test_catalogo_junta_o_mesmo_codigo_de_barras():
+    linhas = [oferta("A", "Cerveja", "CERVEJA MARCA X LATA 350ML", 3.5), oferta("B", "Cerveja", "CERV MARCA X LT 350ML", 3.2),
+              oferta("C", "Cerveja", "CERVEJA MARCA Z GARRAFA 600ML", 7.0)]
+    for l, g in zip(linhas, ["7891234567890", "7891234567890", "SEM GTIN"]):
+        l["gtin"] = g
+    cat = catalogo(classificar_churrasco(pd.DataFrame(linhas)), "Cerveja")
+    assert len(cat) == 2
+    x = cat.iloc[0]
+    assert x["produto"] == "gtin:7891234567890" and x["lojas"] == 2 and x["menor_preco"] == 3.2
+    assert "350 ml" in x["rotulo"] and "2 lojas" in x["rotulo"]
+    assert cat.iloc[1]["produto"].startswith("desc:")
+
+
+def test_filtro_por_produto_e_busca_por_codigo_de_barras():
+    of = classificar_churrasco(pd.DataFrame([{**oferta("A", "Cerveja", "CERVEJA MARCA X LATA 350ML", 3.5), "gtin": "7891234567890"},
+                                             {**oferta("B", "Cerveja", "CERVEJA MARCA Z LATA 350ML", 3.0), "gtin": "7890000000001"}]))
+    f = filtrar_ofertas(of, {"Cerveja": {"produtos": ["gtin:7891234567890"]}})
+    assert list(f["cnpj"]) == ["A"]
+    # descrição sem "CERVEJA": só é aceita quando veio da busca pelo código de barras
+    crua = pd.DataFrame([{**oferta("D", "Cerveja", "MARCA X LN 330ML", 5.0), "gtin": "7891234567890"}])
+    assert classificar_churrasco(crua)["motivo"].item() == "fora da especificação"
+    assert classificar_churrasco(crua, pelo_codigo_de_barras=True)["motivo"].item() == "ok"

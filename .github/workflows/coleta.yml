@@ -77,7 +77,7 @@ jobs:
         run: |
           TAG=$(python3 -c "import json; print(json.load(open('coleta/manifesto.json'))['tag'])")
           gh release delete "$TAG" -y --cleanup-tag 2>/dev/null || true
-          gh release create "$TAG" coleta/ofertas.parquet coleta/lojas.parquet coleta/municipios.parquet \
+          gh release create "$TAG" coleta/ofertas.parquet coleta/lojas.parquet coleta/municipios.parquet coleta/precos.parquet \
             coleta/manifesto.json --title "Coleta ${TAG#coleta-}" --notes-file coleta/resumo.md
           gh release view indice >/dev/null 2>&1 || gh release create indice --latest=false \
             --title "Índice das coletas" --notes "Histórico das coletas (coletas.json). Atualizado automaticamente."

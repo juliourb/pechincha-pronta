@@ -13,10 +13,11 @@ e guarda o resultado. Isso serve para três coisas:
 ```text
 GitHub Actions (todo dia às 04:23 de Maceió)
   └─ a última coleta tem 10 dias ou mais?  não → encerra
-       └─ sim → scripts/coleta_estadual.py (102 municípios × 19 consultas = 1.938)
+       └─ sim → scripts/coleta_estadual.py (102 municípios × 16 consultas = 1.632, 3 municípios por vez)
             ├─ ofertas.parquet     cada oferta da API, classificada (dados brutos + resultado)
             ├─ lojas.parquet       a cesta de cada estabelecimento
             ├─ municipios.parquet  indicadores por município
+            ├─ precos.parquet      preço de cada item em cada município (mediana, P10, lojas)
             └─ manifesto.json      linhas e bytes de cada arquivo, resumo do estado
        → publica a Release "coleta-AAAA-MM-DD" com esses arquivos
        → atualiza coletas.json na Release fixa "indice" (histórico de todas as coletas)
@@ -118,6 +119,10 @@ Mesmo no cenário mais alto, o volume é pequeno para Parquet e cabe nas Release
 sofre com o crescimento, porque baixa só `lojas` e `municipios` da coleta escolhida, que são
 pequenos; `ofertas` fica para download e análise. Se um dia o volume crescer muito, o caminho
 natural é um banco PostgreSQL/PostGIS ou o MotherDuck (DuckDB na nuvem).
+
+**Uso dos dados:** o manual do desenvolvedor da SEFAZ/AL afirma que "todos os dados fornecidos
+são livres para uso particular ou comercial" e recomenda que quem usa muito a API monte uma
+base intermediária própria, que é o que esta coleta faz.
 
 ## Reclassificar coletas antigas
 

@@ -13,8 +13,10 @@ descobrir **onde está mais barato** comprar em cada município alagoano, com ba
 - ⛽ **Combustível**: preço por posto, menor/mediana/maior preço do município e mapa.
 - 🍖 **Cesta de churrasco**: monte a cesta e veja o estabelecimento com o **menor total**,
   entre os que vendem tudo. Os preços são comparados **por kg ou litro**, e cada item tem
-  subfiltros: formato da cerveja (lata, long neck, garrafa 600 ml, litrão), carne resfriada
-  ou congelada, carvão por tamanho de saco, filtro por marca etc.
+  subfiltros (formato da cerveja, carne resfriada ou congelada, saco de carvão) e um
+  **catálogo dos produtos encontrados** (nome, tamanho, em quantas lojas, menor preço) para
+  escolher marcas específicas. Produtos com código de barras podem ser procurados também
+  pelo GTIN, o que encontra lojas que os descrevem de outro jeito.
 - 🧺 **Cesta básica**: a cesta do Decreto-Lei 399/1938 (a mesma do DIEESE) em cada
   estabelecimento, sem importar a marca. Mostra a menor e a maior cesta de cada loja,
   quais itens faltam, quais pesam mais e uma análise automática em texto. Em Maceió,
@@ -176,7 +178,7 @@ domínio, então não troque o endereço para `https://`.
 pytest -q
 ```
 
-São 73 testes, todos sem acesso à rede: cliente da API com respostas simuladas (paginação,
+São 101 testes, todos sem acesso à rede: cliente da API com respostas simuladas (paginação,
 erros HTTP, timeout), regras das cestas (incluindo as fórmulas do DIEESE conferidas com o
 boletim de Maceió), leitura de embalagens, mapa/GeoJSON, o script estadual e testes de ponta a ponta das páginas com
 `streamlit.testing` em modo demonstração. O GitHub Actions roda a suíte a cada push
@@ -222,6 +224,7 @@ data/                     tabela NCM e dados auxiliares (SINESP) para estudos fu
 
 | Versão | O que mudou |
 |---|---|
+| 2.4 | **Cesta do município** (mediana de cada item entre as lojas, como no DIEESE): o Panorama passa de 15 para 73 municípios, com mapa também por item. Consultas sem NCM e regras revistas com o manual da API e uma sondagem real. Churrasco com **catálogo de produtos** (tamanho, lojas, preço) e busca por **código de barras**. Tema escuro. Datas convertidas de UTC para o horário local. |
 | 2.3 | Regras da cesta ajustadas com a 1ª coleta real (Maceió: R$ 660,27 vs. R$ 661,69 do DIEESE); reclassificação de coletas antigas; malha municipal guardada no repositório; mapas ignoram coordenadas fora de Alagoas e reenquadram ao abrir a aba. |
 | 2.2 | Página **Panorama de Alagoas** e coleta automática a cada 10 dias (GitHub Actions + Parquet em Releases), com histórico, mapa coroplético e acompanhamento do tamanho dos dados. Nomes dos municípios com a grafia oficial. |
 | 2.1 | Cesta de churrasco com preço por kg/litro, subfiltros por item e filtro por marca. Nova página **Cesta básica** (Decreto-Lei 399/1938, Região 2) com menor/típica/maior cesta por loja, cobertura e sensibilidade dos itens, análise automática, comparação com o DIEESE e script para o estado inteiro. |

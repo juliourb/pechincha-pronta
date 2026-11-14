@@ -52,6 +52,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--municipios", nargs="+", help="padrão: os 102 municípios")
     p.add_argument("--dias", type=int, default=INTERVALO_DIAS)
     p.add_argument("--pausa", type=float, default=0.3, help="segundos entre consultas")
+    p.add_argument("--paralelo", type=int, default=3, help="municípios consultados ao mesmo tempo")
     p.add_argument("--saida", type=Path, required=True)
     p.add_argument("--data", default=None, help="data da coleta (padrão: hoje, horário de Maceió)")
     p.add_argument("--indice-anterior", type=Path, help="coletas.json já publicado, para manter o histórico")
@@ -69,7 +70,8 @@ def main(argv: list[str] | None = None) -> int:
     inicio = time.time()
     ofertas, falhas, consultas = coletar(
         cliente, municipios, args.dias, args.pausa,
-        progresso=lambda n, total, nome: print(f"[{n}/{total}] {nome}", flush=True))
+        progresso=lambda n, total, nome: print(f"[{n}/{total}] {nome}", flush=True),
+        paralelo=args.paralelo)
     if consultas and len(falhas) / consultas > LIMITE_FALHAS:
         print(f"ERRO: {len(falhas)} de {consultas} consultas falharam; coleta não publicada.", file=sys.stderr)
         return 1

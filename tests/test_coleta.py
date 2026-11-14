@@ -20,10 +20,10 @@ def pasta(tmp_path_factory):
 
 
 def test_arquivos_e_manifesto(pasta):
-    for nome in ("ofertas.parquet", "lojas.parquet", "municipios.parquet", "manifesto.json", "coletas.json", "resumo.md"):
+    for nome in ("ofertas.parquet", "lojas.parquet", "municipios.parquet", "precos.parquet", "manifesto.json", "coletas.json", "resumo.md"):
         assert (pasta / nome).exists(), nome
     m = json.loads((pasta / "manifesto.json").read_text(encoding="utf-8"))
-    assert m["tag"] == "coleta-2026-11-03" and m["consultas"] == 3 * 19 and m["demo"] is True
+    assert m["tag"] == "coleta-2026-11-03" and m["consultas"] == 3 * 16 and m["demo"] is True
     assert m["arquivos"]["ofertas"]["linhas"] == len(pd.read_parquet(pasta / "ofertas.parquet"))
     assert m["arquivos"]["ofertas"]["bytes"] == (pasta / "ofertas.parquet").stat().st_size
     assert m["estado"]["municipios_com_dados"] == 3
@@ -61,8 +61,11 @@ def test_leitura_local(pasta, tmp_path):
 
 def test_ranking_e_correlacao(pasta):
     mun = pd.read_parquet(pasta / "municipios.parquet")
-    rank = pan.ranking(mun, 1)
-    assert list(rank["mediana"]) == sorted(rank["mediana"])
+    rank = pan.ranking(mun)
+    assert len(rank) == 3 and list(rank["cesta"]) == sorted(rank["cesta"])
+    assert (rank["cesta_economica"] <= rank["cesta"]).all()
+    assert pan.ranking(mun, minimo_lojas_item=99).empty
+    assert any("municípios têm a cesta calculada" in f for f in pan.analise_estadual(rank))
     assert pan.correlacao_spearman(pd.Series([1, 2, 3, 4]), pd.Series([10, 8, 6, 4])) == pytest.approx(-1)
     assert "forte" in pan.descrever_correlacao(-0.8)
 
@@ -74,7 +77,8 @@ def test_mapa_coropletico_com_malha_minima():
         {"type": "Feature", "properties": {"id": "2700300"},
          "geometry": {"type": "Polygon", "coordinates": [[[-36.7, -9.8], [-36.5, -9.8], [-36.5, -9.6], [-36.7, -9.8]]]}},
     ]}
-    valores = pd.DataFrame({"codigo_ibge": [2704302], "mediana": [650.0], "com_cesta_completa": [12]})
+    valores = pd.DataFrame({"codigo_ibge": [2704302], "mediana": [650.0], "estabelecimentos": [12],
+                            "situacao": ["completa"]})
     mapa, legenda = criar_mapa_coropletico(malha, valores, "mediana", [600, 700], col.codigo_da_feicao,
                                            {2704302: "Maceió", 2700300: "Arapiraca"})
     html = mapa.get_root().render()
@@ -90,7 +94,7 @@ def test_dias_desde_ultima_coleta_ignora_demo():
     assert col.dias_desde_ultima_coleta([]) is None
 
 
-def test_coleta_envia_termo_e_ncm_e_registra_a_mensagem_de_erro():
+def test_coleta_envia_o_termo_e_registra_a_mensagem_de_erro():
     from economiza.api import EconomizaAPIError
 
     class ClienteFalso:
@@ -103,8 +107,8 @@ def test_coleta_envia_termo_e_ncm_e_registra_a_mensagem_de_erro():
 
     cliente = ClienteFalso()
     ofertas, falhas = col.baixar_municipio(cliente, 2704302, 10)
-    assert ofertas.empty and len(cliente.chamadas) == 19
-    assert all(descricao and ncm for descricao, ncm in cliente.chamadas)
+    assert ofertas.empty and len(cliente.chamadas) == 16
+    assert all(descricao and not ncm for descricao, ncm in cliente.chamadas)
     assert "HTTP 400" in falhas[0]
 
 
@@ -143,3 +147,22 @@ def test_preparar_malha_exige_os_102_municipios():
     assert {"codigo_ibge", "nome"} == set(malha["features"][0]["properties"])
     with pytest.raises(ValueError):
         preparar({"features": completa["features"][:50]})
+
+
+def test_cesta_municipal_nao_exige_loja_completa_e_estima_itens_ausentes():
+    from economiza import cesta_basica as cb
+
+    def of(cnpj, item, preco):
+        return {"cnpj": cnpj, "estabelecimento": cnpj, "item": item, "descricao": f"{item} KG", "preco_base": preco,
+                "motivo": "ok"}
+
+    # padaria só com pão, mercado só com arroz: nenhuma loja completa, mas o município tem os dois
+    ofertas = pd.DataFrame([of("PADARIA", "Pão francês", 15.0), of("MERCADO1", "Arroz", 5.0), of("MERCADO2", "Arroz", 7.0)])
+    c = cb.cesta_municipal(ofertas, ["Pão francês", "Arroz"])
+    assert c["valor"] == round(6.0 * 15.0 + 3.6 * 6.0, 2) and c["itens_imputados"] == 0
+    assert c["valor_economico"] < c["valor"]
+    # feijão ausente: sem referência não há valor; com referência é estimado e sinalizado
+    assert pd.isna(cb.cesta_municipal(ofertas, ["Pão francês", "Arroz", "Feijão"])["valor"])
+    c = cb.cesta_municipal(ofertas, ["Pão francês", "Arroz", "Feijão"], referencia={"Feijão": 8.0})
+    assert c["itens_imputados"] == 1 and c["itens_faltando"] == "Feijão"
+    assert c["valor"] == round(6.0 * 15.0 + 3.6 * 6.0 + 4.5 * 8.0, 2)

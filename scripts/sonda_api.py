@@ -25,9 +25,9 @@ from economiza.municipios import codigo_ibge, normalizar  # noqa: E402
 TERMOS_LIVRES = {
     "Carne": ["PATINHO", "COXAO", "CHA DENTRO", "CHA FORA"],
     "Leite": ["LEITE"], "Feijão": ["FEIJAO"], "Arroz": ["ARROZ"],
-    "Farinha": ["FARINHA MANDIOCA", "FARINHA"], "Tomate": ["TOMATE"],
-    "Pão francês": ["PAO FRANCES", "PAO"], "Café em pó": ["CAFE"], "Banana": ["BANANA"],
-    "Açúcar": ["ACUCAR"], "Óleo": ["OLEO SOJA", "OLEO"], "Manteiga": ["MANTEIGA"],
+    "Farinha": ["FARINHA"], "Tomate": ["TOMATE"],
+    "Pão francês": ["PAO FRANCES", "PAO CARIOQUINHA", "PAO SAL"], "Café em pó": ["CAFE"], "Banana": ["BANANA"],
+    "Açúcar": ["ACUCAR"], "Óleo": ["OLEO SOJA"], "Manteiga": ["MANTEIGA"],
 }
 
 
@@ -64,7 +64,7 @@ def main(argv=None) -> int:
             if args.itens and item.nome not in args.itens:
                 continue
             com_ncm = []
-            for termo in item.termos:
+            for termo in {t.split()[0] for t in item.termos}:
                 for ncm in item.ncms:
                     df, _, _ = consultar(cliente, ibge, termo, ncm, args.dias)
                     com_ncm.append(df)

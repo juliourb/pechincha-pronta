@@ -90,7 +90,7 @@ def criar_mapa(df: pd.DataFrame, coluna_valor: str, coluna_nome: str = "estabele
                              icon="star" if mais_barato else "info-sign"),
         ).add_to(mapa)
 
-    return enquadrar(mapa, limites_robustos(pontos))
+    return enquadrar(tema_escuro(mapa), limites_robustos(pontos))
 
 
 def para_geojson(df: pd.DataFrame, propriedades: list[str]) -> str:
@@ -115,12 +115,24 @@ def para_geojson(df: pd.DataFrame, propriedades: list[str]) -> str:
 
 
 # Rampa sequencial (um só tom, do claro ao escuro): mais escuro = cesta mais cara.
-RAMPA_SEQUENCIAL = ["#d6e6f8", "#a3c5ef", "#6ea2e4", "#3a7fd6", "#1f5aa6"]
-SEM_DADOS = "#e4e3df"
+# No tema escuro, mais claro = valor mais alto (o valor baixo se aproxima do fundo).
+RAMPA_SEQUENCIAL = ["#1c4a82", "#2a66ad", "#3987e5", "#7fb2f0", "#cfe2fa"]
+SEM_DADOS = "#3a3b40"
+
+# Deixa o mapa base do OpenStreetMap escuro, sem depender de serviços que exigem chave.
+_CSS_ESCURO = """<style>
+.leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9) saturate(0.6); }
+.leaflet-container { background: #0e1117; }
+</style>"""
+
+
+def tema_escuro(mapa: folium.Map) -> folium.Map:
+    mapa.get_root().header.add_child(folium.Element(_CSS_ESCURO))
+    return mapa
 
 
 def criar_mapa_coropletico(malha: dict, valores: pd.DataFrame, coluna: str, limites: list[float],
-                           codigo_da_feicao, nomes: dict[int, str]) -> tuple[folium.Map, list[tuple[str, str]]]:
+                           codigo_da_feicao, nomes: dict[int, str], rotulo: str = "Cesta do município") -> tuple[folium.Map, list[tuple[str, str]]]:
     """Mapa coroplético por município. ``valores`` tem ``codigo_ibge`` e ``coluna``.
 
     Devolve o mapa e a legenda [(cor, rótulo)], exibida fora do mapa pela página.
@@ -144,25 +156,29 @@ def criar_mapa_coropletico(malha: dict, valores: pd.DataFrame, coluna: str, limi
         f["properties"] = {
             "municipio": nomes.get(cod, str(cod)),
             "valor": f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if valor else "sem dados",
-            "lojas": int(linha["com_cesta_completa"]) if linha is not None else 0,
+            "lojas": int(linha["estabelecimentos"]) if linha is not None and pd.notna(linha.get("estabelecimentos")) else 0,
+            "situacao": (linha.get("situacao") or "") if linha is not None else "",
             "_cor": cores[classe(valor)] if valor is not None else SEM_DADOS,
         }
 
     mapa = folium.Map(tiles="OpenStreetMap", control_scale=True)
     camada = folium.GeoJson(
         geo,
-        style_function=lambda f: {"fillColor": f["properties"]["_cor"], "color": "#ffffff",
-                                  "weight": 1, "fillOpacity": 0.85},
-        highlight_function=lambda f: {"weight": 3, "color": "#52514e"},
-        tooltip=folium.GeoJsonTooltip(fields=["municipio", "valor", "lojas"],
-                                      aliases=["Município", "Cesta mediana", "Lojas com a cesta completa"]),
+        style_function=lambda f: {"fillColor": f["properties"]["_cor"], "color": "#0e1117",
+                                  "weight": 1, "fillOpacity": 0.9},
+        highlight_function=lambda f: {"weight": 3, "color": "#ffffff"},
+        tooltip=folium.GeoJsonTooltip(fields=["municipio", "valor", "lojas", "situacao"],
+                                      aliases=["Município", rotulo, "Lojas com itens da cesta", "Situação"]),
     ).add_to(mapa)
     (sul, oeste), (norte, leste) = camada.get_bounds()
-    enquadrar(mapa, [[sul, oeste], [norte, leste]], max_zoom=12)
+    enquadrar(tema_escuro(mapa), [[sul, oeste], [norte, leste]], max_zoom=12)
 
     def br(v: float) -> str:
         return f"{v:,.0f}".replace(",", ".")
 
-    legenda = [(cores[i], f"R$ {br(limites[i])} a {br(limites[i + 1])}") for i in range(len(limites) - 1)]
+    def br2(v: float) -> str:
+        return br(v) if limites[-1] >= 100 else f"{v:.2f}".replace(".", ",")
+
+    legenda = [(cores[i], f"R$ {br2(limites[i])} a {br2(limites[i + 1])}") for i in range(len(limites) - 1)]
     legenda.append((SEM_DADOS, "sem dados suficientes"))
     return mapa, legenda

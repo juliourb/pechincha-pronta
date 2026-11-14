@@ -47,6 +47,12 @@ def _buscar_produto(codigo_ibge: int, descricao: str, ncm: str, dias: int) -> pd
     return obter_cliente().pesquisar_produto(codigo_ibge, descricao=descricao, ncm=ncm, dias=dias)
 
 
+@st.cache_data(ttl=CACHE_TTL, show_spinner=False)
+def buscar_por_gtin(codigo_ibge: int, gtin: str, dias: int) -> pd.DataFrame:
+    """Todas as lojas do município que venderam o produto com este código de barras."""
+    return obter_cliente().pesquisar_produto(codigo_ibge, gtin=gtin, dias=dias)
+
+
 def buscar_cesta(itens: list[str], codigo_ibge: int, dias: int) -> pd.DataFrame:
     """Uma consulta por (item, NCM); cada linha recebe a coluna ``item``."""
     partes = []
@@ -62,12 +68,12 @@ def buscar_cesta(itens: list[str], codigo_ibge: int, dias: int) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=CACHE_TTL, show_spinner=False)
-def _buscar_termo_ncm(codigo_ibge: int, termo: str, ncm: str, dias: int) -> pd.DataFrame:
-    return obter_cliente().pesquisar_produto(codigo_ibge, descricao=termo, ncm=ncm, dias=dias)
+def _buscar_termo(codigo_ibge: int, termo: str, dias: int) -> pd.DataFrame:
+    return obter_cliente().pesquisar_produto(codigo_ibge, descricao=termo, dias=dias)
 
 
 def buscar_cesta_basica(codigo_ibge: int, dias: int) -> tuple[pd.DataFrame, list[str]]:
-    """Busca as ofertas da cesta básica (todas as marcas): termo + NCM de cada item.
+    """Busca as ofertas da cesta básica (todas as marcas e NCMs), pelo termo de cada item.
 
     Devolve ``(ofertas, falhas)``. Se uma consulta falhar, as demais seguem; cada falha
     traz a mensagem da API, para o diagnóstico.
@@ -75,12 +81,12 @@ def buscar_cesta_basica(codigo_ibge: int, dias: int) -> tuple[pd.DataFrame, list
     partes, falhas = [], []
     consultas = consultas_api()
     progresso = st.progress(0.0, text="Consultando a API…")
-    for n, (item, termo, ncm) in enumerate(consultas, start=1):
-        progresso.progress(n / len(consultas), text=f"Consultando {item} ({termo}, NCM {ncm})…")
+    for n, (item, termo) in enumerate(consultas, start=1):
+        progresso.progress(n / len(consultas), text=f"Consultando {item} ({termo})…")
         try:
-            df = _buscar_termo_ncm(codigo_ibge, termo, ncm, dias)
+            df = _buscar_termo(codigo_ibge, termo, dias)
         except EconomizaAPIError as erro:
-            falhas.append(f"{item} ({termo}, NCM {ncm}): {erro}")
+            falhas.append(f"{item} ({termo}): {erro}")
             continue
         if not df.empty:
             partes.append(df.assign(item=item))

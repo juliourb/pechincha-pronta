@@ -12,9 +12,12 @@ import plotly.graph_objects as go
 
 from .cesta_basica import ITENS_POR_NOME
 
-AZUL = "#2a78d6"
-LARANJA = "#eb6834"
-CINZA = "#b9b8b3"
+# Cores escolhidas para o tema escuro do app (paleta validada para daltonismo).
+AZUL = "#3987e5"
+LARANJA = "#d95926"
+CINZA = "#6b6b68"       # linhas de apoio
+TEXTO_APOIO = "#c3c2b7"  # rótulos sobre o fundo escuro
+SUPERFICIE = "#0e1117"   # fundo do app: contorno dos marcadores
 _LAYOUT = dict(margin=dict(l=8, r=8, t=48, b=8), hoverlabel=dict(namelength=-1), showlegend=False)
 
 
@@ -31,20 +34,20 @@ def distribuicao_cestas(cestas: pd.DataFrame, referencia: dict | None = None) ->
         nomes = completas["estabelecimento"].fillna(completas["cnpj"]).astype(str)
         fig = go.Figure(go.Scatter(
             x=valores, y=[0] * len(valores), mode="markers",
-            marker=dict(color=AZUL, size=16, opacity=0.85, line=dict(color="white", width=2)),
+            marker=dict(color=AZUL, size=16, opacity=0.85, line=dict(color=SUPERFICIE, width=2)),
             text=nomes, hovertemplate="<b>%{text}</b><br>R$ %{x:.2f}<extra></extra>"))
         fig.update_yaxes(visible=False, range=[-1, 1])
         altura = 260
     else:
         fig = go.Figure(go.Histogram(
-            x=valores, marker=dict(color=AZUL, line=dict(color="white", width=2)), nbinsx=20,
+            x=valores, marker=dict(color=AZUL, line=dict(color=SUPERFICIE, width=2)), nbinsx=20,
             hovertemplate="R$ %{x}<br>%{y} estabelecimento(s)<extra></extra>"))
         fig.update_yaxes(title="Estabelecimentos")
         altura = 380
     mediana = valores.median()
     # Os dois rótulos ficam no topo, cada um "virado" para fora, para não se sobreporem.
     lado_mediana = "right" if not referencia or mediana <= referencia["valor"] else "left"
-    fig.add_vline(x=mediana, line=dict(color="#52514e", width=2, dash="dot"),
+    fig.add_vline(x=mediana, line=dict(color=TEXTO_APOIO, width=2, dash="dot"),
                   annotation=dict(text=f"mediana {_moeda(mediana)} ", xanchor=lado_mediana,
                                   yanchor="bottom", y=1, yref="paper"))
     if referencia:
@@ -72,13 +75,13 @@ def faixa_por_estabelecimento(cestas: pd.DataFrame, limite: int = 25) -> go.Figu
     fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines", line=dict(color=CINZA, width=6), hoverinfo="skip"))
     fig.add_trace(go.Scatter(
         x=dados["cesta_min"], y=nomes, mode="markers", name="Menor cesta",
-        marker=dict(color=AZUL, size=11, line=dict(color="white", width=2)),
+        marker=dict(color=AZUL, size=11, line=dict(color=SUPERFICIE, width=2)),
         customdata=dados[["cesta_tipica", "cesta_max", "amplitude"]],
         hovertemplate="<b>%{y}</b><br>Menor: R$ %{x:.2f}<br>Típica: R$ %{customdata[0]:.2f}"
                       "<br>Maior: R$ %{customdata[1]:.2f}<br>Diferença: R$ %{customdata[2]:.2f}<extra></extra>"))
     fig.add_trace(go.Scatter(
         x=dados["cesta_max"], y=nomes, mode="markers", name="Maior cesta",
-        marker=dict(color="white", size=10, line=dict(color=AZUL, width=2)), hoverinfo="skip"))
+        marker=dict(color=SUPERFICIE, size=10, line=dict(color=AZUL, width=2)), hoverinfo="skip"))
     fig.update_layout(title=f"Menor e maior cesta por estabelecimento (até {limite} mais baratos)",
                       xaxis_title="Valor da cesta (R$)  ·  ● opção mais barata de cada item   ○ mais cara",
                       height=max(320, 26 * len(dados) + 120), **_LAYOUT)
@@ -124,7 +127,7 @@ def mapa_cobertura(matriz: pd.DataFrame, limite: int = 40) -> go.Figure:
     texto = [["✓" if v else "–" for v in linha] for linha in m.values]
     fig = go.Figure(go.Heatmap(
         z=z, x=list(m.columns), y=list(m.index), text=texto, texttemplate="%{text}",
-        colorscale=[[0, "#efeeea"], [1, AZUL]], showscale=False, xgap=2, ygap=2, zmin=0, zmax=1,
+        colorscale=[[0, "#262730"], [1, AZUL]], showscale=False, xgap=2, ygap=2, zmin=0, zmax=1,
         hovertemplate="%{y}<br>%{x}: %{text}<extra></extra>"))
     fig.update_layout(title="Quais itens cada estabelecimento vende (✓) ou não (–)",
                       height=max(320, 24 * len(m) + 140), **_LAYOUT)
@@ -162,14 +165,14 @@ def ranking_divergente(rank: pd.DataFrame, n: int = 10) -> go.Figure:
     cores = [AZUL if v < 0 else LARANJA for v in sel["pct_vs_estado"]]
     fig = go.Figure(go.Bar(
         x=sel["pct_vs_estado"], y=sel["nome"], orientation="h", marker=dict(color=cores, cornerradius=4),
-        text=[f"{v:+.0f}% · {_moeda(m)}" for v, m in zip(sel["pct_vs_estado"], sel["mediana"])],
+        text=[f"{v:+.0f}% · {_moeda(m)}" for v, m in zip(sel["pct_vs_estado"], sel["cesta"])],
         textposition="outside", cliponaxis=False,
-        customdata=sel[["com_cesta_completa"]],
-        hovertemplate="<b>%{y}</b><br>%{x:+.1f}% vs. estado<br>%{customdata[0]} lojas com a cesta<extra></extra>"))
-    fig.add_vline(x=0, line=dict(color="#52514e", width=1))
+        customdata=sel[["estabelecimentos", "situacao"]],
+        hovertemplate="<b>%{y}</b><br>%{x:+.1f}% vs. estado<br>%{customdata[0]} lojas · %{customdata[1]}<extra></extra>"))
+    fig.add_vline(x=0, line=dict(color=TEXTO_APOIO, width=1))
     limite = max(5, sel["pct_vs_estado"].abs().max() * 1.45)
     fig.update_layout(title=f"Os {n} municípios mais baratos (azul) e os {n} mais caros (laranja)",
-                      xaxis_title="Cesta mediana em relação à mediana dos municípios (%)",
+                      xaxis_title="Cesta do município em relação à mediana dos municípios (%)",
                       height=max(360, 24 * len(sel) + 120), **_LAYOUT)
     fig.update_xaxes(range=[-limite, limite], ticksuffix="%")
     return fig
@@ -178,25 +181,29 @@ def ranking_divergente(rank: pd.DataFrame, n: int = 10) -> go.Figure:
 def dispersao_concorrencia(rank: pd.DataFrame) -> go.Figure:
     """Cada ponto é um município: número de lojas com a cesta × preço mediano."""
     fig = go.Figure(go.Scatter(
-        x=rank["com_cesta_completa"], y=rank["mediana"], mode="markers", text=rank["nome"],
-        marker=dict(color=AZUL, size=11, opacity=0.8, line=dict(color="white", width=1.5)),
-        hovertemplate="<b>%{text}</b><br>%{x} lojas com a cesta<br>Mediana R$ %{y:.2f}<extra></extra>"))
+        x=rank["estabelecimentos"], y=rank["cesta"], mode="markers", text=rank["nome"],
+        marker=dict(color=AZUL, size=11, opacity=0.8, line=dict(color=SUPERFICIE, width=1.5)),
+        hovertemplate="<b>%{text}</b><br>%{x} lojas com itens da cesta<br>Cesta R$ %{y:.2f}<extra></extra>"))
     fig.update_layout(title="Mais lojas, cesta mais barata? (cada ponto é um município)",
-                      xaxis_title="Lojas com a cesta completa (escala logarítmica)",
-                      yaxis_title="Cesta mediana (R$)", height=420, **_LAYOUT)
+                      xaxis_title="Lojas com itens da cesta (escala logarítmica)",
+                      yaxis_title="Cesta do município (R$)", height=420, **_LAYOUT)
     fig.update_xaxes(type="log")
     return fig
 
 
 def serie_historica(indice: list[dict]) -> go.Figure:
     """Mediana estadual da cesta em cada coleta."""
-    pontos = [(c["data_coleta"], c["estado"]["cesta_mediana"], c["estado"]["lojas_com_cesta"])
-              for c in indice if c.get("estado", {}).get("cesta_mediana")]
+    def valor(c):
+        e = c.get("estado", {})
+        return e.get("cesta_municipal_mediana") or e.get("cesta_mediana")
+
+    pontos = [(c["data_coleta"], valor(c), c["estado"].get("municipios_com_cesta_municipal", 0))
+              for c in indice if valor(c)]
     datas, medianas, lojas = zip(*pontos) if pontos else ([], [], [])
     fig = go.Figure(go.Scatter(
         x=list(datas), y=list(medianas), mode="lines+markers", customdata=list(lojas),
-        line=dict(color=AZUL, width=2), marker=dict(size=9, color=AZUL, line=dict(color="white", width=2)),
-        hovertemplate="%{x}<br>Mediana R$ %{y:.2f}<br>%{customdata} lojas com a cesta<extra></extra>"))
-    fig.update_layout(title="Cesta básica mediana em Alagoas, por coleta",
+        line=dict(color=AZUL, width=2), marker=dict(size=9, color=AZUL, line=dict(color=SUPERFICIE, width=2)),
+        hovertemplate="%{x}<br>Mediana R$ %{y:.2f}<br>%{customdata} municípios<extra></extra>"))
+    fig.update_layout(title="Cesta básica em Alagoas (mediana entre os municípios), por coleta",
                       yaxis_title="R$", height=360, **_LAYOUT)
     return fig

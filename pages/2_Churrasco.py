@@ -2,12 +2,16 @@ import streamlit as st
 from streamlit.components.v1 import html
 
 from economiza.api import DIAS_MAXIMO, EconomizaAPIError, filtrar_bairro
-from economiza.cesta import (CESTA_CHURRASCO, classificar_churrasco, filtrar_ofertas, montar_carrinho,
+import pandas as pd
+
+from economiza.cesta import (CESTA_CHURRASCO, catalogo, classificar_churrasco, filtrar_ofertas, montar_carrinho,
                              resumo_por_item, total_por_estabelecimento)
 from economiza.cesta_basica import brl, resumo_diagnostico
 from economiza.mapa import criar_mapa, para_geojson
 from economiza.municipios import codigo_ibge
-from economiza.ui import aviso_modo_demo, buscar_cesta, rodape, seletor_municipio
+from economiza.ui import aviso_modo_demo, buscar_cesta, buscar_por_gtin, rodape, seletor_municipio
+
+MAX_GTIN_POR_ITEM = 5  # limite de consultas extras por código de barras
 
 # Streamlit roda este arquivo de cima para baixo A CADA interação do usuário.
 # Guia didático com os conceitos usados aqui: docs/GUIA_STREAMLIT.md
@@ -38,7 +42,7 @@ if consultar:
             # Guarda os dados da API na "memória" da sessão: ao mudar quantidades e filtros
             # abaixo, o script roda de novo, mas reaproveita estes dados sem nova consulta.
             st.session_state["cesta"] = {"ofertas": classificar_churrasco(df), "itens": itens,
-                                         "cidade": cidade, "bairro": bairro}
+                                         "cidade": cidade, "bairro": bairro, "dias": int(dias)}
         except EconomizaAPIError as erro:
             st.error(f"Não foi possível consultar a API. {erro}")
             st.session_state.pop("cesta", None)
@@ -63,20 +67,51 @@ if not itens:
 
 # ---------------------------------------------------------------- quantidades e subfiltros
 st.markdown("**2. Quantidade e filtros de cada item**")
-st.caption("**Tipo** restringe o formato (lata, long neck, carne congelada…). **Marca ou palavra** busca na "
-           "descrição da nota (ex.: `heineken`, `friboi`). Deixe em branco para pegar a opção mais barata.")
+st.caption("**Tipo** restringe o formato (lata, long neck, carne congelada…). Em **Produtos**, escolha itens "
+           "específicos da lista do que foi encontrado nas notas (digite para buscar, ex.: `heineken`). "
+           "Deixe em branco para pegar a opção mais barata.")
 quantidades, filtros = {}, {}
 for item in itens:
     definicao = CESTA_CHURRASCO[item]
     with st.container(border=True):
-        c_q, c_s, c_t = st.columns([1.2, 1.5, 1.5])
+        c_q, c_s = st.columns([1, 1])
         quantidades[item] = c_q.number_input(
             f"**{item}** — quantidade ({definicao.unidade})", min_value=0.1, step=0.5,
             value=float(definicao.quantidade_padrao), key=f"q_{item}", help=f"Em {definicao.dica}.")
         opcoes = ["Qualquer", *definicao.subfiltros]
         tipo = c_s.selectbox("Tipo", opcoes, key=f"s_{item}", disabled=len(opcoes) == 1)
-        texto = c_t.text_input("Marca ou palavra", key=f"t_{item}", placeholder="opcional")
-        filtros[item] = {"subfiltro": None if tipo == "Qualquer" else tipo, "texto": texto}
+        subfiltro = None if tipo == "Qualquer" else tipo
+        # O catálogo lista só o que passa no "Tipo": cada produto com tamanho, lojas e preço.
+        cat = catalogo(filtrar_ofertas(ofertas, {item: {"subfiltro": subfiltro}}), item)
+        por_rotulo = dict(zip(cat["rotulo"], cat["produto"]))
+        marcados = st.multiselect(
+            f"Produtos ({len(cat)} encontrados)", list(por_rotulo), key=f"p_{item}_{tipo}",
+            placeholder="Qualquer produto: usa o mais barato por kg/litro")
+        filtros[item] = {"subfiltro": subfiltro, "produtos": [por_rotulo[r] for r in marcados]}
+
+# Busca extra pelo código de barras: acha o produto escolhido mesmo nas lojas que o
+# descrevem de outro jeito na nota (ex.: "HNK LN 330" em vez de "CERVEJA HEINEKEN").
+escolhidos = {i: [p[5:] for p in f["produtos"] if p.startswith("gtin:")][:MAX_GTIN_POR_ITEM]
+              for i, f in filtros.items()}
+if any(escolhidos.values()):
+    if st.checkbox("Procurar os produtos escolhidos também pelo código de barras",
+                   help="Faz uma consulta extra à API por produto. Encontra lojas que descrevem o mesmo "
+                        "produto de outra forma na nota fiscal."):
+        extras = []
+        with st.spinner("Consultando pelo código de barras…"):
+            for item, gtins in escolhidos.items():
+                for gtin in gtins:
+                    try:
+                        df = buscar_por_gtin(codigo_ibge(consulta["cidade"]), gtin, consulta.get("dias", 7))
+                    except EconomizaAPIError:
+                        continue
+                    if not df.empty:
+                        extras.append(classificar_churrasco(df.assign(item=item), pelo_codigo_de_barras=True))
+        if extras:
+            antes = ofertas["cnpj"].nunique()
+            ofertas = pd.concat([ofertas, filtrar_bairro(pd.concat(extras, ignore_index=True), consulta["bairro"])],
+                                ignore_index=True).drop_duplicates(["cnpj", "item", "produto", "data_venda"])
+            st.caption(f"Busca por código de barras: {ofertas['cnpj'].nunique() - antes} loja(s) a mais.")
 
 # Cálculo refeito a cada mudança nos campos acima; é rápido porque usa só pandas,
 # sem chamar a API. As regras estão em economiza/cesta.py.
@@ -84,7 +119,7 @@ filtradas = filtrar_ofertas(ofertas, filtros)
 resumo = resumo_por_item(filtradas).set_index("item")
 for item in itens:
     if item not in resumo.index:
-        st.error(f"Nenhuma oferta de **{item}** passa nos filtros escolhidos. Afrouxe o tipo ou a marca.")
+        st.error(f"Nenhuma oferta de **{item}** passa nos filtros escolhidos. Afrouxe o tipo ou os produtos.")
 carrinho = montar_carrinho(filtradas, quantidades)
 totais = total_por_estabelecimento(carrinho, ofertas)
 

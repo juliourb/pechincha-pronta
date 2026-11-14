@@ -38,15 +38,25 @@ REFERENCIA_DIEESE = {"MACEIO": {"valor": 661.69, "periodo": "out/2026"}}
 @dataclass(frozen=True)
 class ItemCesta:
     nome: str
-    ncms: tuple[str, ...]
+    ncms: tuple[str, ...]  # NCMs corretos do item (a nota pode trazer outro, por erro de cadastro)
     quantidade: float  # quantidade mensal do decreto, na unidade-base
     unidade: str  # "kg", "L" ou "dz"
     quantidade_texto: str  # como aparece na tabela do DIEESE
     especificacao: str
-    exige: str | None = None  # regex que a descrição precisa conter
+    # Regex (ou várias: todas precisam valer) que a descrição precisa conter. "^" vale para o
+    # início do núcleo da descrição (sem prefixos como "COD: 12 -" ou "F ").
+    exige: str | tuple[str, ...] | None = None
     proibe: str | None = None  # regex que exclui a descrição
+    # Exigência extra quando o NCM da nota não é um dos corretos do item.
+    exige_sem_ncm: str | None = None
+    # Palavra que identifica o produto (aceita abreviações: "MANT", "ACUC"). Sem ela, a oferta é
+    # "outro produto" e nem é guardada. Com o NCM correto, basta a palavra aparecer; com NCM errado
+    # ela precisa abrir a descrição, porque a busca da API também devolve itens que só citam o
+    # termo (biscoito "manteiga", sardinha "com tomate").
+    palavra: str | None = None
+    ancorar: bool = True  # False: a palavra pode vir em qualquer posição mesmo com NCM errado
     fatores_kg_para_dz: dict[str, float] = field(default_factory=dict)  # só banana
-    # Termos de busca enviados à API junto com o NCM (a API não aceita pesquisar só pelo NCM).
+    # Termos enviados à API (sem NCM: lojas pequenas cadastram NCM errado com frequência).
     termos: tuple[str, ...] = ()
     # Peso de uma unidade, para itens vendidos "por unidade" sem peso na descrição (pão francês).
     peso_unitario_kg: float | None = None
@@ -58,59 +68,100 @@ class ItemCesta:
 ITENS_REGIAO_2: tuple[ItemCesta, ...] = (
     ItemCesta("Carne", ("02013000", "02023000"), 4.5, "kg", "4,5 kg",
               "Carne bovina de primeira: coxão mole, coxão duro ou patinho, sem osso",
-              exige=r"PATINHO|\bCO?X(AO|\.)? ?(MOLE|DURO)|\bCHA (DE )?(DENTRO|FORA)",
-              termos=("PATINHO", "COXAO", "CHA")),
-    ItemCesta("Leite", ("04012010",), 6.0, "L", "6,0 L", "Leite integral UHT",
-              exige=r"INTEGRAL|\bINT\b|\bUHT\b|LONGA VIDA",
-              proibe=r"SEMI|DESNAT|\bPO\b|CONDENS|FERMENT|ACHOC|COMPOSTO|BEBIDA",
+              palavra=r"PATINHO|\bCO?X(AO|\.)? ?(MOLE|DURO)|\bCHA (DE )?(DENTRO|FORA)", ancorar=False,
+              proibe=r"OSSO|HAMBURG|SUIN|PORCO|FRANGO|CHARQUE|TEMPERAD|ALMONDEG|LINGUI",
+              termos=("PATINHO", "COXAO", "CHA DENTRO", "CHA FORA")),
+    ItemCesta("Leite", ("04012010", "04011010"), 6.0, "L", "6,0 L", "Leite integral UHT",
+              palavra=r"LEITE?\b", exige=r"INTEGRAL|\bINT\b|\bUHT\b|LONGA VIDA",
+              proibe=r"SEMI|\bDESN|\bPO\b|CONDENS|FERMENT|ACHOC|COMPOSTO|BEBIDA|ZERO|\bZR\b|LACTOSE|\bLAC\b|"
+                     r"COCO|SOJA|CABRA|AVEIA|AMEND|CHOC|MORANG|CREME|DOCE|PROTEIN|KIDS|SABOR",
               termos=("LEITE",)),
     ItemCesta("Feijão", ("07133399", "07133319"), 4.5, "kg", "4,5 kg", "Feijão carioca",
-              exige=r"CARIOC",
+              palavra=r"FEIJ(AO)?\b", exige=r"CARIOC", proibe=r"PRONTO|TEMPERAD|COZIDO|LATA",
               termos=("FEIJAO",)),
     ItemCesta("Arroz", ("10063021",), 3.6, "kg", "3,6 kg",
               "Arroz agulhinha tipo 1 (branco, não parboilizado)",
-              proibe=r"PARBO|INTEGRAL|ARBORIO|JAPON|CATETO|NEGRO|VERMELHO|7 GRAOS",
+              palavra=r"ARROZ\b",
+              proibe=r"PARB|INTEGRAL|ARBORIO|JAPON|CATETO|NEGRO|VERMELHO|7 GRAOS|DOCE|PRONTO|TEMPERAD|RISOTO",
               termos=("ARROZ",)),
     ItemCesta("Farinha", ("11062000",), 3.0, "kg", "3,0 kg", "Farinha de mandioca",
-              proibe=r"TAPIOCA|GOMA|POLVILHO|CARIMA|PUBA|FECULA",
+              palavra=r"FARI(NHA)?\b",
+              proibe=r"TAPIOCA|GOMA|POLVILHO|CARIMA|PUBA|FECULA|TRIGO|ROSCA|AVEIA|MILHO|ARROZ|EMPANAR|PANKO|"
+                     r"LACTEA|LINHACA|COCO|AMENDOA|CENTEIO|SOJA|BICO|BERINJ|MARACUJ|BANANA|CEVADA|QUIBE",
+              exige_sem_ncm=r"MANDIOCA|\bMAND\b|D ?AGUA|AMARELA|BRANCA|\bMESA\b",
               termos=("FARINHA",)),
     ItemCesta("Tomate", ("07020000",), 12.0, "kg", "12,0 kg", "Tomate (comum)",
-              proibe=r"CEREJA|GRAPE|SWEET|MOLHO|EXTRATO|POLPA|SECO",
+              palavra=r"TOMATES?\b",
+              proibe=r"CEREJA|GRAPE|SWEET|MOLHO|EXTRATO|\bEXT\b|POLPA|SECO|PELADO|ITALIAN|ORGANIC|HOLAND",
               termos=("TOMATE",)),
-    ItemCesta("Pão francês", ("19059090",), 6.0, "kg", "6,0 kg", "Pão francês (carioquinha)",
-              exige=r"\bPAO\b.*(FRANC|CARIOQ|\bSAL\b)|CARIOQUINHA",
+    ItemCesta("Pão francês", ("19059090", "19012010"), 6.0, "kg", "6,0 kg", "Pão francês (carioquinha)",
+              palavra=r"PAO\b", exige=r"FRANC|CARIOQ|\bSAL\b",
               proibe=r"INTEGRAL|TORRADA|\bMINI\b|PRE ?ASSAD|RECHE|DOCE|BRIOCHE|QUEIJO|SABORIZ|CONGELAD",
               peso_unitario_kg=0.05,  # pão francês padrão: 50 g
-              termos=("PAO",)),
+              termos=("PAO FRANCES", "PAO CARIOQUINHA")),
     ItemCesta("Café em pó", ("09012100",), 0.3, "kg", "300 g", "Café torrado e moído",
-              proibe=r"GRAO|CAPS|SACHE|DESCAF|SOLUVEL|DOLCE|GUSTO|NESCAFE|CAPPUC|\bPO\b SOLUV",
+              palavra=r"CAFE?\b",
+              proibe=r"GRAO|^CAPS?\b|\bCAPS\b|CAPSULA|SACHE|DESCAF|SOLUV|\bSOL\b|DOLCE|GUSTO|NESCAFE|CAPP|C LEITE|"
+                     r"COM LEITE|\bREFIL\b|GRANUL|\bGRAN\b|EXPRESSO|DRIP|GELADO|PRONTO",
               gramas_implicitas=(250, 500, 1000),
               termos=("CAFE",)),
-    ItemCesta("Banana", ("08039000",), 7.5, "dz", "90 unid (7,5 dz)", "Banana prata ou nanica",
-              exige=r"PRATA|PACOVAN|NANICA|CATURRA|D.?AGUA",
+    ItemCesta("Banana", ("08039000", "08031000"), 7.5, "dz", "90 unid (7,5 dz)", "Banana prata ou nanica",
+              palavra=r"BANANAS?\b", exige=r"PRATA|PACOVAN|NANICA|CATURRA|D.?AGUA",
               proibe=r"PASSA|DOCE|CHIPS|PALMA|CACHO|MACA|TERRA|COMPRIDA|DESIDRAT",
               # pacovan é uma variedade de banana prata
               fatores_kg_para_dz={"PRATA": 1.2, "PACOVAN": 1.2, "NANICA": 1.8, "CATURRA": 1.8, "AGUA": 1.8},
               termos=("BANANA",)),
     ItemCesta("Açúcar", ("17019900", "17011400"), 3.0, "kg", "3,0 kg", "Açúcar cristal",
+              palavra=r"ACUC(AR)?\b",
               proibe=r"DEMERARA|MASCAVO|REFIN|CONFEIT|LIGHT|DIET|SACHE|GLAC|LIQUID|MELADO|STEVIA|ADOC|"
-                     r"VEGAN|IMPALPAVEL|CUBO",
+                     r"VEGAN|IMPALPAVEL|CUBO|COCO|ORGANIC|BAUNILHA",
               termos=("ACUCAR",)),
-    ItemCesta("Óleo", ("15079011",), round(0.75 / DENSIDADE_OLEO, 3), "L", "750 g (≈ 0,815 L)",
-              "Óleo de soja refinado", exige=r"SOJA",
-              termos=("OLEO",)),
+    ItemCesta("Óleo", ("15079011", "15071000"), round(0.75 / DENSIDADE_OLEO, 3), "L", "750 g (≈ 0,815 L)",
+              "Óleo de soja refinado", palavra=r"OLEO\b", exige=r"SOJA",
+              proibe=r"COMPOSTO|MISTO|MOTOR|LUBRIF",
+              termos=("OLEO SOJA",)),
     ItemCesta("Manteiga", ("04051000",), 0.75, "kg", "750 g", "Manteiga",
-              proibe=r"MARGARINA|GARRAFA|CACAU|AMENDOIM",
+              palavra=r"MANT(EIGA)?\b",
+              proibe=r"MARGARINA|GARRAFA|CACAU|AMENDOIM|KARITE|CORPORAL|GHEE|BISC|\bBASE\b|\bALIM",
               gramas_implicitas=(200, 500),
               termos=("MANTEIGA",)),
 )
 ITENS_POR_NOME = {i.nome: i for i in ITENS_REGIAO_2}
 
 
-def consultas_api() -> list[tuple[str, str, str]]:
-    """(item, termo, ncm) de cada consulta à API. Uma oferta pode vir em mais de uma
-    consulta (ex.: termos da carne), por isso o resultado passa por ``remover_duplicadas``."""
-    return [(i.nome, termo, ncm) for i in ITENS_REGIAO_2 for termo in i.termos for ncm in i.ncms]
+def consultas_api() -> list[tuple[str, str]]:
+    """(item, termo) de cada consulta à API. Uma oferta pode vir em mais de uma consulta
+    (ex.: termos da carne), por isso o resultado passa por ``remover_duplicadas``."""
+    return [(i.nome, termo) for i in ITENS_REGIAO_2 for termo in i.termos]
+
+
+_PREFIXOS = re.compile(r"^(?:#[^ ]*#[^ ]*#\s*|COD:? ?\d+ ?-? ?|[A-Z]{1,2} (?=[A-Z]{3}))+")
+
+
+def nucleo(descricao: str) -> str:
+    """Descrição normalizada sem prefixos de cadastro: 'COD: 111 - FARINHA...' -> 'FARINHA...',
+    'FP PAO FRANCES KG' -> 'PAO FRANCES KG'."""
+    return _PREFIXOS.sub("", normalizar(descricao))
+
+
+def avaliar_descricao(item, descricao: str, ncm=None) -> str:
+    """'ok', 'outro produto' (não é o item) ou 'fora da especificação' (é o item, de outro tipo)."""
+    d = nucleo(descricao)
+    palavra = getattr(item, "palavra", None)
+    ncm_correto = str(ncm) in item.ncms
+    if palavra:
+        inicio = r"\b" if ncm_correto or not getattr(item, "ancorar", True) else "^"
+        if not re.search(f"{inicio}(?:{palavra})", d):
+            return "outro produto"
+    exige = item.exige if isinstance(item.exige, tuple) else ((item.exige,) if item.exige else ())
+    if any(not re.search(e, d) for e in exige):
+        return "fora da especificação"
+    if item.proibe and re.search(item.proibe, d):
+        return "fora da especificação"
+    extra = getattr(item, "exige_sem_ncm", None)
+    if extra and not ncm_correto and not re.search(extra, d):
+        return "fora da especificação"
+    return "ok"
 
 
 def remover_duplicadas(ofertas: pd.DataFrame) -> pd.DataFrame:
@@ -220,7 +271,8 @@ def preco_unidade_base(item: ItemCesta, descricao: str, unidade_medida: str | No
 # --------------------------------------------------------------------------------------
 # 2. Classificação das ofertas
 # --------------------------------------------------------------------------------------
-def classificar_ofertas(df: pd.DataFrame, itens: dict | None = None) -> pd.DataFrame:
+def classificar_ofertas(df: pd.DataFrame, itens: dict | None = None,
+                        ignorar_especificacao: bool = False) -> pd.DataFrame:
     """Recebe as ofertas da API (com a coluna ``item``) e devolve uma linha por oferta com
     ``preco_base`` (R$ por kg, L ou dúzia), ``tamanho_unitario`` e ``motivo``
     ('ok' ou por que foi descartada).
@@ -242,12 +294,10 @@ def classificar_ofertas(df: pd.DataFrame, itens: dict | None = None) -> pd.DataF
     precos, motivos = [], []
     for linha in dados.itertuples(index=False):
         item = itens[linha.item]
-        desc = normalizar(linha.descricao)
-        if item.exige and not re.search(item.exige, desc):
-            precos.append(None); motivos.append("fora da especificação")
-            continue
-        if item.proibe and re.search(item.proibe, desc):
-            precos.append(None); motivos.append("fora da especificação")
+        desc = nucleo(linha.descricao)
+        situacao = "ok" if ignorar_especificacao else avaliar_descricao(item, linha.descricao, getattr(linha, "ncm", None))
+        if situacao != "ok":
+            precos.append(None); motivos.append(situacao)
             continue
         p, motivo = preco_unidade_base(item, desc, linha.unidade_medida, linha.preco)
         precos.append(p); motivos.append(motivo)
@@ -515,3 +565,65 @@ def analise_textual(cestas: pd.DataFrame, comp: pd.DataFrame, disp: pd.DataFrame
             "diferem (o DIEESE faz a média de marcas em lojas amostradas; aqui é a opção mais barata de cada loja)."
         )
     return frases
+
+
+# --------------------------------------------------------------------------------------
+# 5. Cesta do município (cada item comprado onde houver)
+# --------------------------------------------------------------------------------------
+MAX_IMPUTADOS = 3  # até quantos itens sem preço local podem ser estimados pelo preço de referência
+
+
+def precos_municipio(ofertas: pd.DataFrame, itens: list[str] | None = None) -> pd.DataFrame:
+    """Preço de cada item no município: mediana e "preço baixo" (percentil 10, menos sensível
+    a erros de cadastro que o mínimo) entre as lojas, usando a opção mais barata de cada loja,
+    e em quantas lojas o item foi encontrado."""
+    itens = itens or [i.nome for i in ITENS_REGIAO_2]
+    por_loja = precos_por_estabelecimento(ofertas, itens)
+    if por_loja.empty:
+        return pd.DataFrame(columns=["item", "lojas", "preco_mediano", "preco_menor"])
+    t = (por_loja.groupby("item")["preco_min"]
+         .agg(lojas="count", preco_mediano="median",
+              preco_menor=lambda s: s.quantile(0.10)).reset_index())
+    return t
+
+
+def cesta_municipal(ofertas: pd.DataFrame, itens: list[str] | None = None,
+                    referencia: dict[str, float] | None = None) -> dict:
+    """Cesta do município, sem exigir que uma única loja venda tudo.
+
+    É a lógica do DIEESE: o preço de cada item é o típico do lugar (aqui, a mediana entre as
+    lojas), e a cesta é a soma das quantidades do decreto × esses preços. Assim o pão pode vir
+    da padaria e a carne do açougue.
+
+    - ``valor``: cesta com o preço mediano de cada item;
+    - ``valor_economico``: comprando cada item onde ele é barato (percentil 10 das lojas);
+    - itens sem nenhum preço local são estimados pelo preço de ``referencia`` (ex.: mediana
+      do estado) quando são no máximo ``MAX_IMPUTADOS``; acima disso a cesta fica sem valor.
+    """
+    itens = itens or [i.nome for i in ITENS_REGIAO_2]
+    precos = precos_municipio(ofertas, itens).set_index("item")
+    faltando = [i for i in itens if i not in precos.index]
+    resultado = {"itens_com_preco": len(itens) - len(faltando), "itens_faltando": ", ".join(faltando),
+                 "itens_imputados": 0, "valor": np.nan, "valor_economico": np.nan,
+                 "lojas_por_item_min": int(precos["lojas"].min()) if len(precos) and not faltando else 0,
+                 "lojas_por_item_mediana": float(precos["lojas"].median()) if len(precos) else 0.0}
+    referencia = referencia or {}
+    if len(faltando) > MAX_IMPUTADOS or any(i not in referencia for i in faltando):
+        return resultado
+    total = garimpado = 0.0
+    for nome in itens:
+        qtd = ITENS_POR_NOME[nome].quantidade
+        if nome in precos.index:
+            total += qtd * precos.loc[nome, "preco_mediano"]
+            garimpado += qtd * precos.loc[nome, "preco_menor"]
+        else:
+            total += qtd * referencia[nome]
+            garimpado += qtd * referencia[nome]
+    resultado.update(valor=round(total, 2), valor_economico=round(garimpado, 2), itens_imputados=len(faltando))
+    return resultado
+
+
+def precos_de_referencia(ofertas: pd.DataFrame) -> dict[str, float]:
+    """Mediana estadual do preço de cada item (entre todas as lojas da coleta)."""
+    t = precos_municipio(ofertas)
+    return dict(zip(t["item"], t["preco_mediano"]))

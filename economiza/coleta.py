@@ -35,13 +35,15 @@ PREFIXO_TAG = "coleta-"
 TAG_INDICE = "indice"
 INTERVALO_DIAS = 10  # coleta a cada 10 dias, consultando os 10 dias anteriores (limite da API)
 COLETAS_POR_ANO = 365 / INTERVALO_DIAS
-ARQUIVOS = ("ofertas", "lojas", "municipios")
+ARQUIVOS = ("ofertas", "lojas", "municipios", "precos")
+VERSAO_METODOLOGIA = 2  # 1: consultas termo+NCM; 2: + consultas sem NCM e cesta por município
 _FUSO = ZoneInfo("America/Maceio")
 
 # Colunas guardadas das ofertas: os dados "brutos" necessários para refazer a classificação
 # no futuro (se as regras mudarem) + o resultado da classificação desta coleta.
 COLUNAS_OFERTAS = [
-    "data_coleta", "codigo_ibge", "municipio", "item", "ncm", "gtin", "descricao", "unidade_medida",
+    "data_coleta", "codigo_ibge", "municipio", "item", "ncm", "gtin", "descricao", "descricao_sefaz", "gpc",
+    "unidade_medida",
     "valor_declarado", "valor_venda", "data_venda", "preco_base", "tamanho_unitario", "motivo",
     "cnpj", "estabelecimento", "razao_social", "bairro", "logradouro", "numero", "cep",
     "latitude", "longitude",
@@ -57,11 +59,11 @@ def hoje() -> str:
 def baixar_municipio(cliente, codigo_ibge: int, dias: int, pausa: float = 0.0) -> tuple[pd.DataFrame, list[str]]:
     """Ofertas da cesta básica num município (termo + NCM de cada item). Devolve (ofertas, falhas)."""
     partes, falhas = [], []
-    for item, termo, ncm in cb.consultas_api():
+    for item, termo in cb.consultas_api():
         try:
-            df = cliente.pesquisar_produto(codigo_ibge, descricao=termo, ncm=ncm, dias=dias)
+            df = cliente.pesquisar_produto(codigo_ibge, descricao=termo, dias=dias)
         except EconomizaAPIError as erro:
-            falhas.append(f"{codigo_ibge}:{termo}:{ncm}: {erro}")
+            falhas.append(f"{codigo_ibge}:{termo}: {erro}")
             df = pd.DataFrame()
         if not df.empty:
             partes.append(df.assign(item=item))
@@ -71,24 +73,38 @@ def baixar_municipio(cliente, codigo_ibge: int, dias: int, pausa: float = 0.0) -
     return ofertas, falhas
 
 
+def _coletar_municipio(cliente, nome: str, dias: int, pausa: float) -> tuple[pd.DataFrame, list[str]]:
+    ibge = MUNICIPIOS_AL[nome]
+    df, falhas = baixar_municipio(cliente, ibge, dias, pausa)
+    if df.empty:
+        return df, falhas
+    classificadas = cb.classificar_ofertas(df)
+    # A busca da API devolve também produtos que só citam o termo (biscoito "manteiga",
+    # sardinha "com tomate"). Eles não são o item e não são guardados.
+    classificadas = classificadas[classificadas["motivo"] != "outro produto"]
+    return classificadas.assign(codigo_ibge=ibge, municipio=nome), falhas
+
+
 def coletar(cliente, municipios: list[str], dias: int = INTERVALO_DIAS, pausa: float = 0.0,
-            progresso: Callable[[int, int, str], None] | None = None) -> tuple[pd.DataFrame, list[str], int]:
+            progresso: Callable[[int, int, str], None] | None = None,
+            paralelo: int = 1) -> tuple[pd.DataFrame, list[str], int]:
     """Coleta e classifica as ofertas de vários municípios.
 
-    Devolve ``(ofertas, falhas, consultas)``.
+    ``paralelo``: quantos municípios consultar ao mesmo tempo (poucos, para não sobrecarregar
+    a API da SEFAZ). Devolve ``(ofertas, falhas, consultas)``.
     """
+    from concurrent.futures import ThreadPoolExecutor
+
     partes, falhas = [], []
-    consultas = 0
-    for n, nome in enumerate(municipios, start=1):
-        if progresso:
-            progresso(n, len(municipios), nome)
-        ibge = MUNICIPIOS_AL[nome]
-        df, f = baixar_municipio(cliente, ibge, dias, pausa)
-        consultas += len(cb.consultas_api())
-        falhas += f
-        if not df.empty:
-            classificadas = cb.classificar_ofertas(df)
-            partes.append(classificadas.assign(codigo_ibge=ibge, municipio=nome))
+    with ThreadPoolExecutor(max_workers=max(1, paralelo)) as executor:
+        resultados = executor.map(lambda nome: _coletar_municipio(cliente, nome, dias, pausa), municipios)
+        for n, (nome, (df, f)) in enumerate(zip(municipios, resultados), start=1):
+            if progresso:
+                progresso(n, len(municipios), nome)
+            falhas += f
+            if not df.empty:
+                partes.append(df)
+    consultas = len(municipios) * len(cb.consultas_api())
     ofertas = pd.concat(partes, ignore_index=True) if partes else pd.DataFrame(columns=COLUNAS_OFERTAS)
     return ofertas, falhas, consultas
 
@@ -105,7 +121,8 @@ def reclassificar(ofertas: pd.DataFrame) -> pd.DataFrame:
     for col in brutas.columns:
         if isinstance(brutas[col].dtype, pd.CategoricalDtype):
             brutas[col] = brutas[col].astype(object)
-    return cb.classificar_ofertas(brutas)
+    novas = cb.classificar_ofertas(brutas)
+    return novas[novas["motivo"] != "outro produto"].reset_index(drop=True)
 
 
 # ---------------------------------------------------------------------------------- tabelas
@@ -128,10 +145,27 @@ def montar_tabelas(ofertas: pd.DataFrame, data_coleta: str) -> dict[str, pd.Data
         lojas.insert(0, "data_coleta", data_coleta)
 
     municipios = cb.indicadores(lojas, por="municipio") if not lojas.empty else pd.DataFrame()
+    precos = pd.DataFrame()
     if not municipios.empty:
+        # Cesta do município: preço mediano de cada item entre as lojas (não exige loja completa).
+        texto = ofertas.assign(municipio=ofertas["municipio"].astype(str))
+        referencia = cb.precos_de_referencia(texto)
+        linhas, partes = [], []
+        for nome, grupo in texto.groupby("municipio"):
+            c = cb.cesta_municipal(grupo, referencia=referencia)
+            linhas.append({"municipio": nome, "cesta": c["valor"], "cesta_economica": c["valor_economico"],
+                           "itens_com_preco": c["itens_com_preco"], "itens_imputados": c["itens_imputados"],
+                           "itens_sem_preco": c["itens_faltando"], "lojas_por_item": c["lojas_por_item_mediana"]})
+            partes.append(cb.precos_municipio(grupo).assign(municipio=nome))
+        municipios = municipios.merge(pd.DataFrame(linhas), on="municipio", how="outer")
+        municipios["horas_trabalho"] = municipios["cesta"].map(
+            lambda v: cb.horas_de_trabalho(v) if pd.notna(v) else None)
         municipios.insert(0, "data_coleta", data_coleta)
         municipios.insert(2, "codigo_ibge", municipios["municipio"].map(MUNICIPIOS_AL))
-    return {"ofertas": ofertas, "lojas": lojas, "municipios": municipios}
+        precos = pd.concat(partes, ignore_index=True)
+        precos.insert(0, "data_coleta", data_coleta)
+        precos.insert(2, "codigo_ibge", precos["municipio"].map(MUNICIPIOS_AL))
+    return {"ofertas": ofertas, "lojas": lojas, "municipios": municipios, "precos": precos}
 
 
 def _compactar(df: pd.DataFrame) -> pd.DataFrame:
@@ -162,6 +196,12 @@ def resumo_estadual(tabelas: dict[str, pd.DataFrame]) -> dict:
         "cesta_mediana": round(float(completas.median()), 2) if len(completas) else None,
         "cesta_menor": round(float(completas.min()), 2) if len(completas) else None,
         "cesta_maior": round(float(completas.max()), 2) if len(completas) else None,
+        # Cesta por município (mediana de cada item entre as lojas): indicador principal do Panorama.
+        "municipios_com_cesta_municipal": int(mun["cesta"].notna().sum()) if "cesta" in mun else 0,
+        "municipios_sem_estimativa": int((mun["cesta"].notna() & (mun["itens_imputados"] == 0)).sum())
+        if "cesta" in mun else 0,
+        "cesta_municipal_mediana": round(float(mun["cesta"].median()), 2)
+        if "cesta" in mun and mun["cesta"].notna().any() else None,
     }
 
 
@@ -174,7 +214,8 @@ def salvar(tabelas: dict[str, pd.DataFrame], pasta: Path, extra: dict | None = N
         caminho = pasta / f"{nome}.parquet"
         _compactar(df).to_parquet(caminho, compression="zstd", index=False)
         arquivos[nome] = {"linhas": int(len(df)), "bytes": caminho.stat().st_size}
-    manifesto = {**(extra or {}), "arquivos": arquivos, "estado": resumo_estadual(tabelas)}
+    manifesto = {**(extra or {}), "versao_metodologia": VERSAO_METODOLOGIA, "arquivos": arquivos,
+                 "estado": resumo_estadual(tabelas)}
     (pasta / "manifesto.json").write_text(json.dumps(manifesto, ensure_ascii=False, indent=2), encoding="utf-8")
 
     indice = [c for c in (indice_anterior or []) if c.get("tag") != manifesto.get("tag")] + [manifesto]

@@ -58,8 +58,11 @@ def test_churrasco_subfiltro_de_formato():
     at.selectbox(key="s_Cerveja").set_value("Long neck").run()
     assert not at.exception
     assert at.metric[1].value != total_antes  # long neck é mais cara por litro
-    at.text_input(key="t_Cerveja").input("marca inexistente").run()
-    assert not at.exception and "Nenhuma oferta de **Cerveja**" in at.error[0].value
+    # o catálogo lista os produtos long neck encontrados; escolher um restringe a cesta
+    catalogo_cerveja = at.multiselect(key="p_Cerveja_Long neck")
+    assert catalogo_cerveja.options and all("LONG NECK" in o for o in catalogo_cerveja.options)
+    catalogo_cerveja.select(catalogo_cerveja.options[0]).run()
+    assert not at.exception
 
 
 def test_panorama_le_coletas_locais(tmp_path, monkeypatch):
@@ -76,5 +79,5 @@ def test_panorama_le_coletas_locais(tmp_path, monkeypatch):
     monkeypatch.setenv("PECHINCHA_COLETAS_DIR", str(raiz))
     at = AppTest.from_file(str(RAIZ / "pages/4_Panorama.py"), default_timeout=T).run()
     assert not at.exception
-    assert at.metric[0].value.endswith("de 102")
+    assert at.metric[0].value == "3 de 102"
     assert "Análise" in " ".join(m.value for m in at.markdown)

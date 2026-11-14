@@ -50,6 +50,15 @@ _OFERTAS_CHURRASCO: dict[str, list[tuple[str, str, float]]] = {
 }
 _NCM_CONGELADA = "02023000"
 
+# Termos de busca da cesta básica -> NCMs fictícios em que a demonstração procura.
+_NCMS_DO_TERMO = {
+    "PATINHO": ["02013000", "02023000"], "COXAO": ["02013000"], "CHA DENTRO": ["02013000"],
+    "CHA FORA": ["02013000"], "LEITE": ["04012010"], "FEIJAO": ["07133399"], "ARROZ": ["10063021"],
+    "FARINHA": ["11062000"], "TOMATE": ["07020000"], "PAO FRANCES": ["19059090"],
+    "PAO CARIOQUINHA": ["19059090"], "CAFE": ["09012100"], "BANANA": ["08039000"],
+    "ACUCAR": ["17019900"], "OLEO SOJA": ["15079011"], "MANTEIGA": ["04051000"],
+}
+
 # Cesta básica: ofertas fictícias por NCM, com descrições no estilo das notas fiscais.
 # (descrição, unidade de medida, preço). Algumas estão fora da especificação de propósito
 # (café em grão, arroz parboilizado, banana-da-terra) para exercitar o filtro.
@@ -137,11 +146,17 @@ class DemoClient:
     def pesquisar_produto(self, codigo_ibge: int, descricao: str | None = None,
                           ncm: str | None = None, gtin: str | None = None,
                           dias: int = 7) -> pd.DataFrame:
+        if gtin and not descricao:  # busca por código de barras: a demonstração não acrescenta lojas
+            return normalizar_resultado([])
         termo = normalizar(descricao)
         if termo in _OFERTAS_CHURRASCO:
             return self._churrasco(codigo_ibge, termo, ncm, dias)
         if ncm in _OFERTAS_NCM:  # cesta básica: como a API, devolve só o que contém o termo
             return self._cesta_basica(codigo_ibge, ncm, dias, termo)
+        if termo in _NCMS_DO_TERMO:  # consulta só pelo termo: todos os NCMs do item
+            partes = [self._cesta_basica(codigo_ibge, n, dias, termo) for n in _NCMS_DO_TERMO[termo]]
+            partes = [p for p in partes if not p.empty]
+            return pd.concat(partes, ignore_index=True) if partes else normalizar_resultado([])
         descricao = (descricao or "PRODUTO").upper()
         base, unidade = _PRECO_PRODUTO.get(descricao, (10.0, "UN"))
         registros = []
@@ -173,7 +188,7 @@ class DemoClient:
                 continue
             prefixo = "PADARIA" if i == 15 else "MERCADO"
             for j, (desc, unidade, preco) in enumerate(_OFERTAS_NCM[ncm]):
-                if termo and termo not in desc:
+                if termo and not all(palavra in desc for palavra in termo.split()):
                     continue
                 if j > 0 and r.random() < 0.35:
                     continue

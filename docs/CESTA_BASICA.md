@@ -30,10 +30,13 @@ Os códigos NCM foram conferidos na Tabela NCM vigente (`data/Tabela_NCM_Vigente
 
 ## 2. Da nota fiscal ao preço por kg, litro ou dúzia
 
-1. **Busca por termo + NCM.** A API exige uma descrição na pesquisa; por isso cada item é
-   consultado com um termo genérico (ex.: "FEIJAO", "CAFE") junto com o código NCM. Isso traz
-   todas as marcas do produto: a marca não importa. A carne usa três termos (PATINHO, COXAO,
-   CHA), e ofertas repetidas entre termos são removidas.
+1. **Busca pelo nome, sem NCM.** A API exige uma descrição na pesquisa (o NCM só pode ir como
+   complemento; manual do desenvolvedor, seção 6.1). Cada item é consultado por um termo
+   ("FEIJAO", "CAFE", "OLEO SOJA"; a carne usa PATINHO, COXAO, CHA DENTRO e CHA FORA), **sem
+   filtrar pelo NCM**. Uma sondagem em Batalha, Piranhas e Penedo mostrou que lojas pequenas
+   cadastram NCM errado com frequência (pão francês como "preparação alimentícia", banana com
+   NCM de alface): sem o filtro, as lojas com tomate em Penedo passaram de 8 para 17, e com
+   farinha de 14 para 28.
 2. **Filtro pela especificação.** O NCM é mais amplo que o item do DIEESE (o 1905.90.90 inclui
    bolos; o 0201.30.00 inclui picanha). Cada item tem palavras obrigatórias e proibidas na
    descrição: por exemplo, a carne precisa conter patinho, coxão mole ou coxão duro (ou "chã de
@@ -74,7 +77,34 @@ Com essas regras, as lojas com a cesta completa passaram de 44 para 57, e a cest
 **Maceió ficou em R$ 660,27**, contra **R$ 661,69 do DIEESE** em outubro de 2026, uma
 diferença de 0,2%.
 
-## 3. Cesta por estabelecimento
+### Como separar o item de quem só cita o nome
+
+A busca da API também devolve produtos que apenas citam o termo: biscoito "manteiga",
+sardinha "com tomate", sabonete "café". A regra é:
+
+- se o **NCM da nota é o correto** do item, basta a palavra do item aparecer na descrição
+  (aceita abreviações como "MANT", "ACUC", "LEIT" e marca na frente);
+- se o **NCM é outro**, a palavra precisa **abrir** a descrição ("TOMATE KG" entra;
+  "EXT DE TOMATE" não). Prefixos de cadastro ("COD: 111 -", "FP ") são ignorados;
+- o que não passa é "outro produto" e nem é guardado; o que é o item mas de outro tipo
+  (arroz parboilizado, leite desnatado) fica guardado como "fora da especificação".
+
+## 3. Cesta do município
+
+Para comparar municípios, a cesta **não exige que uma única loja venda tudo**. Como no DIEESE,
+o preço de cada item é o típico do lugar, e o pão pode vir da padaria e a carne do açougue:
+
+- **cesta do município** = Σ quantidade do decreto × **mediana**, entre as lojas do município,
+  do preço do item (usando a opção mais barata de cada loja);
+- **cesta econômica** = a mesma soma com o **percentil 10** dos preços (comprar cada item onde
+  é barato; o percentil é menos sensível a erros de cadastro que o mínimo);
+- **itens estimados**: se o município não tem nenhuma nota de até 3 itens, o preço deles é
+  estimado pela mediana do estado, e o município aparece marcado. Com mais de 3, fica sem valor.
+
+Na 1ª coleta, isso levou a cobertura de 15 municípios (com alguma loja completa) para 73
+(31 com os 12 itens próprios e 42 com itens estimados).
+
+## 4. Cesta numa única loja
 
 Para cada estabelecimento e item, o app calcula o menor, o mediano e o maior preço-base
 entre as ofertas da loja. Então:
@@ -86,7 +116,7 @@ entre as ofertas da loja. Então:
 A distância entre a menor e a maior cesta mostra **quanto a escolha da marca pesa dentro da
 mesma loja**. Só tem valor de cesta o estabelecimento que vende **todos** os itens selecionados.
 
-## 4. Indicadores
+## 5. Indicadores
 
 | Indicador | Cálculo |
 |---|---|
@@ -102,7 +132,7 @@ As fórmulas foram conferidas com o boletim do DIEESE de outubro de 2026: a cest
 de R$ 661,69, corresponde a 89h48m de trabalho e a 44,13% do salário mínimo líquido. O mesmo
 resultado é verificado nos testes automatizados.
 
-## 5. Diferenças em relação ao DIEESE
+## 6. Diferenças em relação ao DIEESE
 
 | | DIEESE | Pechincha Pronta |
 |---|---|---|
@@ -113,7 +143,7 @@ resultado é verificado nos testes automatizados.
 
 Por isso a comparação com o valor do DIEESE é **uma referência, não uma validação**.
 
-## 6. Escala estadual
+## 7. Escala estadual
 
 O script `scripts/cesta_basica_estado.py` aplica a mesma metodologia a vários municípios, ou
 aos 102, e gera `municipios.csv` (indicadores por município, com o código IBGE para juntar à
@@ -130,7 +160,7 @@ Possibilidades de análise com esses arquivos:
 - municípios sem nenhuma loja com a cesta completa (indício de acesso restrito a alimentos);
 - autocorrelação espacial (Moran) dos valores por município.
 
-## 7. Limitações conhecidas
+## 8. Limitações conhecidas
 
 - **Descrições das notas fiscais não são padronizadas.** Abreviações fora das regras
   (por exemplo, "PTO BOV" para patinho) são descartadas. Use a aba Diagnóstico para encontrar
@@ -148,6 +178,9 @@ Possibilidades de análise com esses arquivos:
 ## Fontes
 
 - BRASIL. Decreto-Lei nº 399, de 30 de abril de 1938.
+- SEFAZ/AL. *Projeto Economiza Alagoas: Manual de Orientação do Desenvolvedor*, versão 1.0,
+  março de 2023. (Critérios de pesquisa, datas em UTC, e a indicação de que os dados são
+  "livres para uso particular ou comercial".)
 - DIEESE. *Metodologia da Pesquisa Nacional da Cesta Básica de Alimentos*. Agosto de 2025.
   https://www.dieese.org.br/metodologia/metodologiaCestaBasica2025.pdf
 - DIEESE. *Pesquisa Nacional da Cesta Básica de Alimentos: outubro de 2026*.

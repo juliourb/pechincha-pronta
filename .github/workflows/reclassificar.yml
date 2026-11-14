@@ -37,7 +37,7 @@ jobs:
         run: |
           for pasta in reclass/coleta-*/; do
             tag=$(basename "$pasta")
-            gh release upload "$tag" "$pasta"ofertas.parquet "$pasta"lojas.parquet "$pasta"municipios.parquet \
+            gh release upload "$tag" "$pasta"ofertas.parquet "$pasta"lojas.parquet "$pasta"municipios.parquet "$pasta"precos.parquet \
               "$pasta"manifesto.json --clobber
           done
           gh release upload indice reclass/coletas.json --clobber

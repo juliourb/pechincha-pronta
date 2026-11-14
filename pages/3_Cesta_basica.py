@@ -29,8 +29,9 @@ with st.expander("O que entra na cesta e como o valor é calculado"):
     )
     st.markdown(
         """
-1. Para cada item, o app busca **todas as ofertas** dos códigos NCM acima (qualquer marca) e
-   mantém só as que batem com a especificação (ex.: café **em pó**, não em grão).
+1. Para cada item, o app busca **todas as ofertas** pelo nome do produto (qualquer marca e qualquer
+   NCM, porque muitas lojas cadastram o código errado) e mantém só as que batem com a especificação
+   (ex.: café **em pó**, não em grão).
 2. O preço de cada oferta vira **preço por kg, litro ou dúzia**, lendo o tamanho da embalagem
    na descrição (ex.: arroz 5 kg a R$ 29,90 → R$ 5,98/kg). Banana vendida por kg vira dúzia
    (× 1,2 prata; × 1,8 nanica), como faz o DIEESE.
@@ -59,12 +60,15 @@ with st.form("consulta_cesta_basica"):
 if consultar:
     ofertas, falhas = buscar_cesta_basica(codigo_ibge(cidade), int(dias))
     # Guarda o resultado: mudar os itens ou o filtro abaixo NÃO consulta a API de novo.
-    st.session_state["cesta_basica"] = {"ofertas": cb.classificar_ofertas(ofertas) if not ofertas.empty else ofertas,
+    if not ofertas.empty:
+        ofertas = cb.classificar_ofertas(ofertas)
+        ofertas = ofertas[ofertas["motivo"] != "outro produto"]  # resultados da busca que não são o item
+    st.session_state["cesta_basica"] = {"ofertas": ofertas,
                                         "falhas": falhas, "cidade": cidade, "bairro": bairro}
 
 if "cesta_basica" not in st.session_state:
     st.info("Escolha o município e clique em **Calcular a cesta**. A consulta faz uma busca por "
-            "termo e código NCM (19 consultas) e pode levar alguns segundos.")
+            "termo de cada item (16 consultas) e pode levar cerca de um minuto.")
     rodape()
     st.stop()
 
@@ -104,8 +108,32 @@ matriz = cb.matriz_cobertura(ofertas, itens, minimo)
 sens = cb.sensibilidade(matriz)
 referencia = cb.REFERENCIA_DIEESE.get(normalizar(consulta["cidade"])) if cesta_completa and not consulta["bairro"] else None
 
+# ---------------------------------------------------------------- cesta do município
+municipal = cb.cesta_municipal(ofertas, itens)
+precos_itens = cb.precos_municipio(ofertas, itens)
+st.markdown(f"**3. Cesta do município: {nome_oficial(consulta['cidade'])}**"
+            + (f" · bairro {consulta['bairro']}" if consulta["bairro"] else ""))
+st.caption("Cada item pelo preço mediano entre as lojas que o vendem (o pão pode vir da padaria e a carne do "
+           "açougue). É a lógica do DIEESE e não exige que uma única loja tenha tudo.")
+cm = st.columns(4)
+if pd.notna(municipal["valor"]):
+    ref_dieese = cb.REFERENCIA_DIEESE.get(normalizar(consulta["cidade"])) if cesta_completa and not consulta["bairro"] else None
+    cm[0].metric("Cesta do município", cb.brl(municipal["valor"]),
+                 delta=f"{cb.numero_br(100 * (municipal['valor'] / ref_dieese['valor'] - 1))}% vs. DIEESE" if ref_dieese else None,
+                 delta_color="inverse",
+                 help=f"DIEESE {ref_dieese['periodo']}: {cb.brl(ref_dieese['valor'])}" if ref_dieese else None)
+    cm[1].metric("Cesta econômica", cb.brl(municipal["valor_economico"]),
+                 help="Comprando cada item onde ele é barato (10º percentil dos preços entre as lojas).")
+    cm[2].metric("Horas de trabalho", cb.formatar_horas(cb.horas_de_trabalho(municipal["valor"])),
+                 help=f"{cb.numero_br(cb.percentual_salario_liquido(municipal['valor']))}% do salário mínimo líquido.")
+    cm[3].metric("Lojas por item (mediana)", f"{municipal['lojas_por_item_mediana']:.0f}")
+else:
+    cm[0].metric("Itens com preço", f"{municipal['itens_com_preco']} de {len(itens)}")
+    st.info(f"Sem notas fiscais no período para: **{municipal['itens_faltando']}**. Retire esses itens acima "
+            "para calcular a cesta com os demais.")
+
 # ---------------------------------------------------------------- indicadores
-st.markdown(f"**3. Resultado em {nome_oficial(consulta['cidade'])}**" + (f" · bairro {consulta['bairro']}" if consulta["bairro"] else ""))
+st.markdown("**4. Cesta numa única loja** (estabelecimentos que vendem todos os itens)")
 m = st.columns(5)
 m[0].metric("Cestas completas", f"{len(completas)} de {int((cestas['n_itens'] >= minimo).sum())}",
             help=f"Lojas com todos os itens, entre as que vendem pelo menos {minimo} itens.")
@@ -130,7 +158,21 @@ else:
             st.markdown(f"- {frase}")
 
 moeda = {"format": "R$ %.2f"}
-abas = st.tabs(["Distribuição", "Por estabelecimento", "Itens", "Entram e saem", "Mapa", "Diagnóstico"])
+abas = st.tabs(["Distribuição", "Por estabelecimento", "Itens", "Entram e saem", "Mapa", "Diagnóstico",
+                "Preços no município"])
+
+with abas[6]:
+    st.caption("Base da cesta do município: preço de cada item entre as lojas (opção mais barata de cada loja).")
+    tabela_precos = precos_itens.assign(
+        quantidade=precos_itens["item"].map(lambda n: cb.ITENS_POR_NOME[n].quantidade_texto),
+        gasto=precos_itens["preco_mediano"] * precos_itens["item"].map(lambda n: cb.ITENS_POR_NOME[n].quantidade))
+    st.dataframe(
+        tabela_precos.sort_values("gasto", ascending=False), hide_index=True, use_container_width=True,
+        column_order=["item", "quantidade", "lojas", "preco_mediano", "preco_menor", "gasto"],
+        column_config={"item": "Item", "quantidade": "Quantidade mensal", "lojas": "Lojas com o item",
+                       "preco_mediano": st.column_config.NumberColumn("Preço mediano (kg/L/dz)", **moeda),
+                       "preco_menor": st.column_config.NumberColumn("Preço baixo (P10)", **moeda),
+                       "gasto": st.column_config.NumberColumn("Gasto na cesta", **moeda)})
 
 with abas[0]:
     if completas.empty:

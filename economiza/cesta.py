@@ -99,9 +99,59 @@ CESTA_CHURRASCO: dict[str, ItemChurrasco] = {
 }
 
 
-def classificar_churrasco(df: pd.DataFrame) -> pd.DataFrame:
-    """Converte cada oferta para R$/kg ou R$/L e marca as fora do item (ex.: picanha suína)."""
-    return classificar_ofertas(df, CESTA_CHURRASCO)
+def gtin_valido(gtin) -> bool:
+    """Código de barras de verdade: 8 a 14 dígitos (as notas trazem também 'SEM GTIN')."""
+    texto = str(gtin) if gtin is not None and not pd.isna(gtin) else ""
+    return texto.isdigit() and 8 <= len(texto) <= 14 and int(texto) > 0
+
+
+def _chave_produto(linha) -> str:
+    """Identifica o produto: o código de barras quando existe; senão, a descrição."""
+    return f"gtin:{linha.gtin}" if gtin_valido(linha.gtin) else f"desc:{normalizar(linha.descricao)}"
+
+
+def classificar_churrasco(df: pd.DataFrame, pelo_codigo_de_barras: bool = False) -> pd.DataFrame:
+    """Converte cada oferta para R$/kg ou R$/L e marca as fora do item (ex.: picanha suína).
+
+    Acrescenta ``produto``, a chave usada no catálogo. Com ``pelo_codigo_de_barras`` as
+    ofertas vieram de uma busca por GTIN e a descrição não precisa conter o nome do item.
+    """
+    ofertas = classificar_ofertas(df, CESTA_CHURRASCO, ignorar_especificacao=pelo_codigo_de_barras)
+    if "gtin" not in ofertas:
+        ofertas["gtin"] = pd.NA
+    ofertas["produto"] = [_chave_produto(l) for l in ofertas.itertuples(index=False)] if len(ofertas) else []
+    return ofertas
+
+
+def tamanho_legivel(tamanho: float, unidade: str) -> str:
+    """0.35 L -> '350 ml'; 5 kg -> '5 kg'; sem tamanho -> 'a granel'."""
+    if pd.isna(tamanho):
+        return "a granel"
+    if tamanho < 1:
+        return f"{tamanho * 1000:.0f} {'ml' if unidade == 'L' else 'g'}"
+    return f"{tamanho:g} {unidade}".replace(".", ",")
+
+
+def catalogo(ofertas: pd.DataFrame, item: str) -> pd.DataFrame:
+    """Produtos encontrados para um item: nome, tamanho, em quantas lojas e o menor preço.
+
+    O mesmo código de barras aparece com descrições diferentes em cada loja; o catálogo
+    junta tudo num produto só e usa a descrição mais comum como nome.
+    """
+    colunas = ["produto", "nome", "tamanho", "lojas", "menor_preco", "menor_preco_base", "rotulo"]
+    validas = ofertas[(ofertas["motivo"] == "ok") & (ofertas["item"] == item)]
+    if validas.empty:
+        return pd.DataFrame(columns=colunas)
+    unidade = CESTA_CHURRASCO[item].unidade
+    validas = validas.assign(_nome=validas["descricao"].map(normalizar))
+    cat = validas.groupby("produto").agg(
+        nome=("_nome", lambda s: s.mode().iloc[0]), tamanho=("tamanho_unitario", "median"),
+        lojas=("cnpj", "nunique"), menor_preco=("valor_declarado", "min"),
+        menor_preco_base=("preco_base", "min")).reset_index()
+    cat["rotulo"] = [
+        f"{r.nome} · {tamanho_legivel(r.tamanho, unidade)} · {r.lojas} loja{'s' if r.lojas > 1 else ''} · "
+        f"desde R$ {r.menor_preco:.2f}".replace(".", ",") for r in cat.itertuples()]
+    return cat.sort_values(["lojas", "nome"], ascending=[False, True]).reset_index(drop=True)[colunas]
 
 
 def _atende(linhas: pd.DataFrame, sub: Subfiltro) -> pd.Series:
@@ -123,7 +173,8 @@ def _atende(linhas: pd.DataFrame, sub: Subfiltro) -> pd.Series:
 def filtrar_ofertas(ofertas: pd.DataFrame, filtros: dict[str, dict] | None = None) -> pd.DataFrame:
     """Aplica, item a item, o subfiltro escolhido e o texto de marca/descrição.
 
-    ``filtros``: item -> {"subfiltro": nome ou None, "texto": "heineken" ou ""}.
+    ``filtros``: item -> {"subfiltro": nome ou None, "produtos": [chaves do catálogo],
+    "texto": "heineken" ou ""}. Todos opcionais.
     """
     validas = ofertas[ofertas["motivo"] == "ok"]
     if not filtros:
@@ -138,6 +189,9 @@ def filtrar_ofertas(ofertas: pd.DataFrame, filtros: dict[str, dict] | None = Non
         sub = CESTA_CHURRASCO[item].subfiltros.get(escolha.get("subfiltro") or "")
         if sub:
             ok &= _atende(linhas, sub)
+        produtos = escolha.get("produtos")
+        if produtos:
+            ok &= linhas["produto"].isin(produtos)
         texto = normalizar(escolha.get("texto"))
         if texto:
             ok &= linhas["descricao"].map(normalizar).str.contains(re.escape(texto), regex=True)

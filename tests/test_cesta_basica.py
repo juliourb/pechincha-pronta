@@ -75,8 +75,9 @@ def test_especificacao_filtra_tipo_do_produto():
     motivos = cb.classificar_ofertas(df).set_index("descricao")["motivo"]
     assert motivos["CAFE TORRADO MOIDO 250G"] == "ok"
     assert motivos["CARNE BOV CX MOLE KG"] == "ok"
-    for d in ("CAFE EM GRAO 500G", "ARROZ PARBOILIZADO 1KG", "PICANHA KG", "LEITE UHT DESNATADO 1L", "BANANA DA TERRA KG"):
+    for d in ("CAFE EM GRAO 500G", "ARROZ PARBOILIZADO 1KG", "LEITE UHT DESNATADO 1L", "BANANA DA TERRA KG"):
         assert motivos[d] == "fora da especificação", d
+    assert motivos["PICANHA KG"] == "outro produto"  # não é um dos cortes da cesta
 
 
 def test_preco_atipico_descartado():
@@ -135,7 +136,7 @@ def test_fluxo_completo_com_dados_demo():
     partes = []
     for item in cb.ITENS_REGIAO_2:
         for ncm in item.ncms:
-            d = DemoClient().pesquisar_produto(2704302, descricao=item.termos[0], ncm=ncm)
+            d = DemoClient().pesquisar_produto(2704302, descricao=item.termos[0])
             if not d.empty:
                 partes.append(d.assign(item=item.nome))
     of = cb.classificar_ofertas(pd.concat(partes, ignore_index=True))
@@ -149,11 +150,42 @@ def test_fluxo_completo_com_dados_demo():
     assert any("DIEESE" in f for f in frases)
 
 
-def test_toda_consulta_leva_termo_e_ncm():
+def test_consultas_so_pelo_termo():
     consultas = cb.consultas_api()
-    assert len(consultas) == 19
-    assert all(termo and len(ncm) == 8 for _, termo, ncm in consultas)
-    assert {i for i, _, _ in consultas} == set(ITENS)
+    assert len(consultas) == 16 and all(termo for _, termo in consultas)
+    assert {i for i, _ in consultas} == set(ITENS)
+
+
+@pytest.mark.parametrize("item, descricao, ncm, esperado", [
+    # casos reais vistos na sondagem da API (Penedo, nov/2026)
+    ("Manteiga", "Bisc Marilan Cream Cracker Manteiga 300g", "19059020", "outro produto"),
+    ("Manteiga", "Marg Claybom C Sal Cr De Leite 500g", "15171000", "outro produto"),
+    ("Tomate", "Ext De Tomate Elefante Tp 275g", "20029000", "outro produto"),
+    ("Tomate", "Sardinha G. Da Costa C Oleo 125g", "16041310", "outro produto"),
+    ("Café em pó", "Sab Palmolive Cafe e Oleo Amend 85g", "34011190", "outro produto"),
+    ("Café em pó", "Cafe Pilao Sol Pouch 40g", "21011110", "fora da especificação"),
+    ("Café em pó", "CAFE SANTA CLARA 250G", "09012100", "ok"),
+    ("Arroz", "Mac Urbano De Arroz Z G 500g", "19021900", "outro produto"),
+    ("Arroz", "Arroz Kiarroz Parb 5kg", "10063011", "fora da especificação"),
+    ("Açúcar", "Bananinha Zero Acucar Rei Doces 25g", "20079990", "outro produto"),
+    ("Farinha", "Farinha De Trigo Dona Benta S f 1kg", "11010010", "fora da especificação"),
+    ("Farinha", "COD: 111 - FARINHA DE MANDIOCA A GRANEL KG - GRAOS", "11029000", "ok"),
+    ("Farinha", "FARINHA PINHEIRO 1KG", "11062000", "ok"),          # NCM certo: basta ser farinha
+    ("Farinha", "FARINHA PINHEIRO 1KG", "19019090", "fora da especificação"),  # NCM errado: exige "mandioca"
+    ("Leite", "Leite Uht Molico Desn 1l", "04011010", "fora da especificação"),
+    ("Leite", "Leite Uht Betania Integral C Tp 1l", "04011010", "ok"),
+    ("Leite", "BL UHT CHOC BETANIA KIDS 200ML", "04039000", "outro produto"),
+    ("Leite", "FRUTIGUTTI LEITE UHT INTEGRAL 1L", "04012010", "ok"),    # marca na frente, NCM certo
+    ("Manteiga", "MANT CAMPONESA 200G", "04051000", "ok"),               # abreviação
+    ("Açúcar", "ACUC CAETE CRISTAL 1KG", "17019900", "ok"),
+    ("Pão francês", "FP PAO FRANCES A KG", "19012010", "ok"),
+    ("Banana", "BANANA  PRATA KG", "07051100", "ok"),               # NCM de alface, banana de verdade
+    ("Carne", "CARNE BV PATINHO", "02102000", "ok"),
+    ("Carne", "CARNE BOVINA OSSO DO PATINHO KG", "02013000", "fora da especificação"),
+    ("Óleo", "OLEO DE SOJA SIOL 500ML", "15071000", "ok"),
+])
+def test_avaliar_descricao(item, descricao, ncm, esperado):
+    assert cb.avaliar_descricao(cb.ITENS_POR_NOME[item], descricao, ncm) == esperado
 
 
 def test_remover_duplicadas_entre_termos():

@@ -39,6 +39,8 @@ ERROS_TEMPORARIOS = {500, 502, 503, 504}
 COLUNAS = {
     "produto.codigo": "codigo_produto",
     "produto.descricao": "descricao",
+    "produto.descricaoSefaz": "descricao_sefaz",
+    "produto.gpc": "gpc",
     "produto.gtin": "gtin",
     "produto.ncm": "ncm",
     "produto.unidadeMedida": "unidade_medida",
@@ -87,7 +89,9 @@ def normalizar_resultado(registros: list[dict[str, Any]]) -> pd.DataFrame:
         if col in df:
             df[col] = pd.to_numeric(df[col], errors="coerce")
     if "data_venda" in df:
-        df["data_venda"] = pd.to_datetime(df["data_venda"], errors="coerce")
+        # A API informa as datas em UTC (manual, seção 5): converte para o horário de Alagoas.
+        datas = pd.to_datetime(df["data_venda"], errors="coerce", utc=True)
+        df["data_venda"] = datas.dt.tz_convert("America/Maceio").dt.tz_localize(None)
     for col in ("ncm", "gtin", "cnpj"):
         if col in df:
             df[col] = df[col].astype("string")

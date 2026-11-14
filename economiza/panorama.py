@@ -9,22 +9,29 @@ from .cesta_basica import brl, formatar_horas, horas_de_trabalho, numero_br
 from .municipios import nome_oficial
 
 
-def ranking(municipios: pd.DataFrame, minimo_lojas: int) -> pd.DataFrame:
-    """Municípios com pelo menos ``minimo_lojas`` cestas completas, do mais barato ao mais caro,
-    com a diferença (%) em relação à mediana estadual dos municípios."""
-    r = municipios[municipios["com_cesta_completa"] >= minimo_lojas].copy()
+def ranking(municipios: pd.DataFrame, max_estimados: int = 3, minimo_lojas_item: float = 1) -> pd.DataFrame:
+    """Municípios com a cesta municipal calculada, do mais barato ao mais caro.
+
+    - ``max_estimados``: quantos itens sem preço local (estimados pela mediana do estado) aceitar;
+    - ``minimo_lojas_item``: mediana de lojas por item exigida (com 1 loja a cesta é frágil).
+    Acrescenta a diferença (%) em relação à mediana dos municípios listados.
+    """
+    if "cesta" not in municipios:
+        return municipios.iloc[0:0]
+    r = municipios[municipios["cesta"].notna() & (municipios["itens_imputados"] <= max_estimados)
+                   & (municipios["lojas_por_item"] >= minimo_lojas_item)].copy()
     if r.empty:
         return r
-    referencia = r["mediana"].median()
-    r["pct_vs_estado"] = 100 * (r["mediana"] / referencia - 1)
+    r["pct_vs_estado"] = 100 * (r["cesta"] / r["cesta"].median() - 1)
     r["nome"] = r["municipio"].map(nome_oficial)
-    return r.sort_values("mediana").reset_index(drop=True)
+    r["situacao"] = r["itens_imputados"].map(lambda n: "completa" if n == 0 else f"{int(n)} item(ns) estimado(s)")
+    return r.sort_values("cesta").reset_index(drop=True)
 
 
 def correlacao_spearman(x: pd.Series, y: pd.Series) -> float:
     """Correlação de postos (Spearman), sem depender do scipy."""
     validos = x.notna() & y.notna()
-    if validos.sum() < 3:
+    if validos.sum() < 3 or x[validos].nunique() < 2 or y[validos].nunique() < 2:
         return np.nan
     return float(x[validos].rank().corr(y[validos].rank()))
 
@@ -38,29 +45,36 @@ def descrever_correlacao(rho: float) -> str:
     return f"{nivel} ({sentido}; ρ = {numero_br(rho, 2)})"
 
 
-def analise_estadual(rank: pd.DataFrame, lojas: pd.DataFrame, minimo_lojas: int) -> list[str]:
+def analise_estadual(rank: pd.DataFrame) -> list[str]:
     """Frases-resumo do panorama estadual."""
-    frases = []
     if rank.empty:
-        return [f"Nenhum município tem {minimo_lojas} ou mais lojas com a cesta completa nesta coleta."]
-    completas = lojas.loc[lojas["completa"], "cesta_min"]
+        return ["Nenhum município atende aos critérios escolhidos nesta coleta."]
+    frases = []
+    completas = int((rank["itens_imputados"] == 0).sum())
+    mediana = rank["cesta"].median()
     barato, caro = rank.iloc[0], rank.iloc[-1]
     frases.append(
-        f"**{len(rank)}** municípios têm {minimo_lojas} ou mais lojas com a cesta completa; juntos, "
-        f"somam {int(rank['com_cesta_completa'].sum())} estabelecimentos."
+        f"**{len(rank)}** municípios têm a cesta calculada: **{completas}** com os 12 itens encontrados "
+        f"no próprio município e {len(rank) - completas} com até 3 itens estimados pela mediana do estado."
     )
     frases.append(
-        f"A mediana estadual (todas as lojas com a cesta completa) é **{brl(completas.median())}**, "
-        f"o equivalente a {formatar_horas(horas_de_trabalho(completas.median()))} de trabalho com um salário mínimo."
+        f"A cesta mediana entre os municípios é **{brl(mediana)}**, o equivalente a "
+        f"{formatar_horas(horas_de_trabalho(mediana))} de trabalho com um salário mínimo."
     )
     if len(rank) > 1:
-        dif = caro["mediana"] - barato["mediana"]
+        dif = caro["cesta"] - barato["cesta"]
         frases.append(
-            f"A cesta mediana mais barata está em **{barato['nome']}** ({brl(barato['mediana'])}) e a mais cara em "
-            f"**{caro['nome']}** ({brl(caro['mediana'])}): diferença de {brl(dif)} por mês "
-            f"({numero_br(100 * dif / barato['mediana'], 0)}%)."
+            f"A cesta mais barata está em **{barato['nome']}** ({brl(barato['cesta'])}) e a mais cara em "
+            f"**{caro['nome']}** ({brl(caro['cesta'])}): diferença de {brl(dif)} por mês "
+            f"({numero_br(100 * dif / barato['cesta'], 0)}%)."
         )
-    rho = correlacao_spearman(rank["com_cesta_completa"], rank["mediana"])
+    if "cesta_economica" in rank and rank["cesta_economica"].notna().any():
+        economia = (1 - rank["cesta_economica"] / rank["cesta"]).median()
+        frases.append(
+            f"Pesquisar preços compensa: comprando cada item onde ele é barato, a cesta fica em média "
+            f"{numero_br(100 * economia, 0)}% mais barata que pelo preço típico do município."
+        )
+    rho = correlacao_spearman(rank["estabelecimentos"], rank["cesta"])
     if not np.isnan(rho):
         frases.append(f"Relação entre número de lojas e preço da cesta: {descrever_correlacao(rho)}.")
     return frases
