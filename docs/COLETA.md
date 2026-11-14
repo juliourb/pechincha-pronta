@@ -106,15 +106,34 @@ menos que no modo demonstração. Para planejar, use o valor mais alto, 40 bytes
 | 100 mil | 4 MB | 146 MB | 0,7 GB |
 | 300 mil | 12 MB | 438 MB | 2,2 GB |
 
-Quantas ofertas a API devolve por coleta ainda é uma incógnita. A primeira coleta responde:
-o `manifesto.json` de cada coleta registra linhas e bytes de cada arquivo, e a aba
-**Dados e tamanho** do Panorama mostra o tamanho real de cada coleta e a projeção anual
-calculada com eles.
+**Primeira coleta real (13/11/2026):** 58.642 ofertas em **1,73 MB** (29,5 bytes por oferta,
+entre os dois cenários simulados); `lojas` 0,10 MB e `municipios` 0,01 MB. No total, **cerca de
+1,9 MB por coleta, ou ~70 MB por ano** (~0,35 GB em 5 anos). A coleta levou 2h43min
+(1.938 consultas) e só 1 consulta falhou por tempo esgotado.
+
+O `manifesto.json` de cada coleta registra linhas e bytes de cada arquivo, e a aba
+**Dados e tamanho** do Panorama acompanha o crescimento real.
 
 Mesmo no cenário mais alto, o volume é pequeno para Parquet e cabe nas Releases. O app não
 sofre com o crescimento, porque baixa só `lojas` e `municipios` da coleta escolhida, que são
 pequenos; `ofertas` fica para download e análise. Se um dia o volume crescer muito, o caminho
 natural é um banco PostgreSQL/PostGIS ou o MotherDuck (DuckDB na nuvem).
+
+## Reclassificar coletas antigas
+
+Como as ofertas guardam os dados brutos, dá para aplicar regras novas a coletas antigas sem
+consultar a API: em *Actions → reclassificar-coletas → Run workflow*, informe a tag
+(ex.: `coleta-2026-11-13`) ou `todas`. Os arquivos da Release e o índice são substituídos, e o
+manifesto ganha o campo `reclassificada_em`. Na primeira coleta, as regras ajustadas com os dados
+reais aumentaram as lojas com a cesta completa de 44 para 57.
+
+## Malha municipal
+
+O mapa do Panorama usa `data/malha_municipios_al.geojson`, guardado no repositório. O app não
+depende do IBGE estar acessível, porque o servidor do IBGE costuma recusar conexões vindas do
+exterior, como as do Streamlit Cloud. Para gerar ou atualizar o arquivo, rode *Actions →
+malha-municipal → Run workflow*: ele baixa do IBGE (ou de uma cópia pública), confere os 102
+municípios e grava o arquivo no repositório.
 
 ## Rodando localmente
 

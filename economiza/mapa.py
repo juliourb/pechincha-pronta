@@ -10,21 +10,64 @@ import folium
 import pandas as pd
 
 
+# Retângulo que envolve Alagoas, com folga. Coordenadas fora dele vêm de erro de cadastro
+# na nota fiscal (na 1ª coleta real, uma loja de Junqueiro aparecia no Rio de Janeiro).
+LIMITES_ALAGOAS = {"lat": (-10.7, -8.6), "lon": (-38.5, -34.9)}
+
+
 def com_coordenadas(df: pd.DataFrame) -> pd.DataFrame:
-    """Linhas com latitude/longitude válidas (não nulas e dentro dos limites)."""
+    """Linhas com latitude/longitude válidas e dentro de Alagoas."""
     if df.empty or not {"latitude", "longitude"} <= set(df.columns):
         return df.iloc[0:0]
     lat = pd.to_numeric(df["latitude"], errors="coerce")
     lon = pd.to_numeric(df["longitude"], errors="coerce")
-    validas = lat.between(-90, 90) & lon.between(-180, 180) & (lat != 0) & (lon != 0)
+    validas = lat.between(*LIMITES_ALAGOAS["lat"]) & lon.between(*LIMITES_ALAGOAS["lon"])
     return df[validas]
+
+
+def limites_robustos(pontos: pd.DataFrame) -> list[list[float]]:
+    """Retângulo para enquadrar o mapa. Com 10 pontos ou mais, ignora os 2% mais extremos
+    de cada lado, para um ponto isolado não afastar demais o zoom."""
+    lat, lon = pontos["latitude"].astype(float), pontos["longitude"].astype(float)
+    q = (0.02, 0.98) if len(pontos) >= 10 else (0.0, 1.0)
+    return [[lat.quantile(q[0]), lon.quantile(q[0])], [lat.quantile(q[1]), lon.quantile(q[1])]]
+
+
+def enquadrar(mapa: folium.Map, limites: list[list[float]], max_zoom: int = 16) -> folium.Map:
+    """Centraliza o mapa e corrige o enquadramento quando ele nasce numa aba escondida.
+
+    O Leaflet calcula o zoom pelo tamanho do mapa; dentro de uma aba do Streamlit que ainda
+    não está visível esse tamanho é zero e o mapa abre deslocado. O script reenquadra quando
+    o mapa ganha tamanho (a aba é aberta) e logo após carregar.
+    """
+    (sul, oeste), (norte, leste) = limites
+    mapa.location = [(sul + norte) / 2, (oeste + leste) / 2]
+    mapa.fit_bounds(limites, max_zoom=max_zoom)
+    nome = mapa.get_name()
+    js = f"""
+    (function() {{
+        var mapa = {nome}, limites = {json.dumps(limites)}, largura = 0;
+        function ajustar() {{
+            mapa.invalidateSize();
+            mapa.fitBounds(limites, {{maxZoom: {max_zoom}, padding: [20, 20]}});
+        }}
+        setTimeout(ajustar, 300);
+        window.addEventListener("resize", function() {{
+            var atual = mapa.getContainer().clientWidth;
+            mapa.invalidateSize();
+            if (largura === 0 && atual > 0) {{ ajustar(); }}
+            largura = atual;
+        }});
+    }})();
+    """
+    mapa.get_root().script.add_child(folium.Element(js))
+    return mapa
 
 
 def criar_mapa(df: pd.DataFrame, coluna_valor: str, coluna_nome: str = "estabelecimento") -> folium.Map | None:
     """Um marcador por estabelecimento; o(s) mais barato(s) em vermelho.
 
-    O enquadramento usa ``fit_bounds`` para mostrar todos os pontos,
-    em vez de um zoom fixo.
+    Só entram coordenadas dentro de Alagoas, e o enquadramento ignora pontos extremos.
     """
     pontos = com_coordenadas(df).drop_duplicates(subset=["latitude", "longitude", coluna_nome])
     if pontos.empty:
@@ -47,10 +90,7 @@ def criar_mapa(df: pd.DataFrame, coluna_valor: str, coluna_nome: str = "estabele
                              icon="star" if mais_barato else "info-sign"),
         ).add_to(mapa)
 
-    sul, oeste = pontos[["latitude", "longitude"]].min()
-    norte, leste = pontos[["latitude", "longitude"]].max()
-    mapa.fit_bounds([[sul, oeste], [norte, leste]], max_zoom=16)
-    return mapa
+    return enquadrar(mapa, limites_robustos(pontos))
 
 
 def para_geojson(df: pd.DataFrame, propriedades: list[str]) -> str:
@@ -117,7 +157,8 @@ def criar_mapa_coropletico(malha: dict, valores: pd.DataFrame, coluna: str, limi
         tooltip=folium.GeoJsonTooltip(fields=["municipio", "valor", "lojas"],
                                       aliases=["Município", "Cesta mediana", "Lojas com a cesta completa"]),
     ).add_to(mapa)
-    mapa.fit_bounds(camada.get_bounds())
+    (sul, oeste), (norte, leste) = camada.get_bounds()
+    enquadrar(mapa, [[sul, oeste], [norte, leste]], max_zoom=12)
 
     def br(v: float) -> str:
         return f"{v:,.0f}".replace(",", ".")

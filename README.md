@@ -176,7 +176,7 @@ domínio, então não troque o endereço para `https://`.
 pytest -q
 ```
 
-São 66 testes, todos sem acesso à rede: cliente da API com respostas simuladas (paginação,
+São 73 testes, todos sem acesso à rede: cliente da API com respostas simuladas (paginação,
 erros HTTP, timeout), regras das cestas (incluindo as fórmulas do DIEESE conferidas com o
 boletim de Maceió), leitura de embalagens, mapa/GeoJSON, o script estadual e testes de ponta a ponta das páginas com
 `streamlit.testing` em modo demonstração. O GitHub Actions roda a suíte a cada push
@@ -222,6 +222,7 @@ data/                     tabela NCM e dados auxiliares (SINESP) para estudos fu
 
 | Versão | O que mudou |
 |---|---|
+| 2.3 | Regras da cesta ajustadas com a 1ª coleta real (Maceió: R$ 660,27 vs. R$ 661,69 do DIEESE); reclassificação de coletas antigas; malha municipal guardada no repositório; mapas ignoram coordenadas fora de Alagoas e reenquadram ao abrir a aba. |
 | 2.2 | Página **Panorama de Alagoas** e coleta automática a cada 10 dias (GitHub Actions + Parquet em Releases), com histórico, mapa coroplético e acompanhamento do tamanho dos dados. Nomes dos municípios com a grafia oficial. |
 | 2.1 | Cesta de churrasco com preço por kg/litro, subfiltros por item e filtro por marca. Nova página **Cesta básica** (Decreto-Lei 399/1938, Região 2) com menor/típica/maior cesta por loja, cobertura e sensibilidade dos itens, análise automática, comparação com o DIEESE e script para o estado inteiro. |
 | 2.0 | Publicado como repositório aberto. Código reorganizado no pacote `economiza/`; token fora do código; correções na cesta (NCMs duplicados, itens com o mesmo NCM misturados, paginação com filtro de bairro); tratamento de erros e timeout; cache; mapa sem chave de API; exportação CSV/GeoJSON; modo demonstração; testes e CI. |

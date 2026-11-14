@@ -106,3 +106,40 @@ def test_coleta_envia_termo_e_ncm_e_registra_a_mensagem_de_erro():
     assert ofertas.empty and len(cliente.chamadas) == 19
     assert all(descricao and ncm for descricao, ncm in cliente.chamadas)
     assert "HTTP 400" in falhas[0]
+
+
+def test_reclassificar_coleta_guardada(pasta, tmp_path):
+    from scripts.reclassificar_coleta import main as reclassificar_main
+
+    raiz = tmp_path / "coletas"
+    shutil.copytree(pasta, raiz / "coleta-2026-11-03")
+    indice = json.loads((pasta / "coletas.json").read_text(encoding="utf-8"))
+    for c in indice:
+        c["demo"] = False  # simula uma coleta real
+    (raiz / "coletas.json").write_text(json.dumps(indice), encoding="utf-8")
+    saida = tmp_path / "reclass"
+    assert reclassificar_main(["--indice", str(raiz / "coletas.json"), "--saida", str(saida),
+                               "--pasta-local", str(raiz)]) == 0
+    novo = json.loads((saida / "coletas.json").read_text(encoding="utf-8"))
+    assert novo[0]["reclassificada_em"] and novo[0]["consultas"] == indice[0]["consultas"]
+    assert (saida / "coleta-2026-11-03" / "lojas.parquet").exists()
+    # categorias do Parquet não atrapalham a reclassificação
+    of = col.reclassificar(pd.read_parquet(saida / "coleta-2026-11-03" / "ofertas.parquet"))
+    assert (of["motivo"] == "ok").any()
+
+
+def test_preparar_malha_exige_os_102_municipios():
+    from economiza.municipios import MUNICIPIOS_AL
+    from scripts.baixar_malha import preparar
+
+    def quadrado(cod, chave="codarea"):
+        return {"type": "Feature", "properties": {chave: str(cod)},
+                "geometry": {"type": "Polygon", "coordinates": [[[-36.123456789, -9.1], [-36.0, -9.1], [-36.0, -9.0], [-36.123456789, -9.1]]]}}
+
+    completa = {"features": [quadrado(c) for c in MUNICIPIOS_AL.values()]}
+    malha = preparar(completa)
+    assert len(malha["features"]) == 102
+    assert malha["features"][0]["geometry"]["coordinates"][0][0][0] == -36.12346  # 5 casas
+    assert {"codigo_ibge", "nome"} == set(malha["features"][0]["properties"])
+    with pytest.raises(ValueError):
+        preparar({"features": completa["features"][:50]})

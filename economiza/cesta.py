@@ -43,6 +43,8 @@ class ItemChurrasco:
     proibe: str | None = None
     subfiltros: dict[str, Subfiltro] = field(default_factory=dict)
     fatores_kg_para_dz: dict[str, float] = field(default_factory=dict)  # compatibilidade
+    peso_unitario_kg: float | None = None
+    gramas_implicitas: tuple[int, ...] = ()
 
 
 _FORMATOS_CERVEJA = {

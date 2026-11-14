@@ -1,0 +1,43 @@
+name: reclassificar-coletas
+
+# Refaz a classificação de coletas já publicadas com as regras atuais da cesta,
+# usando os dados brutos guardados (não consulta a API). Rodar à mão (aba Actions).
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag da coleta (ex.: coleta-2026-11-13) ou 'todas'"
+        default: "todas"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: coleta
+  cancel-in-progress: false
+
+jobs:
+  reclassificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Reclassifica
+        run: |
+          pip install -r requirements.txt
+          gh release download indice -p coletas.json -D anterior
+          python scripts/reclassificar_coleta.py --indice anterior/coletas.json --tag "${{ inputs.tag }}" --saida reclass
+      - name: Envia os arquivos de volta às Releases
+        run: |
+          for pasta in reclass/coleta-*/; do
+            tag=$(basename "$pasta")
+            gh release upload "$tag" "$pasta"ofertas.parquet "$pasta"lojas.parquet "$pasta"municipios.parquet \
+              "$pasta"manifesto.json --clobber
+          done
+          gh release upload indice reclass/coletas.json --clobber

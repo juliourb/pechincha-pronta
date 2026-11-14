@@ -93,6 +93,21 @@ def coletar(cliente, municipios: list[str], dias: int = INTERVALO_DIAS, pausa: f
     return ofertas, falhas, consultas
 
 
+def reclassificar(ofertas: pd.DataFrame) -> pd.DataFrame:
+    """Refaz a classificação de uma coleta guardada com as regras atuais, sem consultar a API.
+
+    Usa só os dados brutos guardados (descrição, unidade, preços...), por isso funciona
+    com coletas antigas sempre que as regras da cesta forem melhoradas.
+    """
+    if ofertas.empty:
+        return ofertas
+    brutas = ofertas.drop(columns=[c for c in ("preco_base", "tamanho_unitario", "motivo") if c in ofertas])
+    for col in brutas.columns:
+        if isinstance(brutas[col].dtype, pd.CategoricalDtype):
+            brutas[col] = brutas[col].astype(object)
+    return cb.classificar_ofertas(brutas)
+
+
 # ---------------------------------------------------------------------------------- tabelas
 def montar_tabelas(ofertas: pd.DataFrame, data_coleta: str) -> dict[str, pd.DataFrame]:
     """Gera as tabelas ``ofertas``, ``lojas`` e ``municipios`` de uma coleta."""
@@ -226,7 +241,7 @@ def projecao_anual(indice: list[dict]) -> dict:
 
 
 # -------------------------------------------------------------------- malha municipal (mapa)
-_FONTES_MALHA = (
+FONTES_MALHA = (
     "https://servicodados.ibge.gov.br/api/v3/malhas/estados/27?intrarregiao=municipio"
     "&formato=application/vnd.geo%2Bjson&qualidade=intermediaria",
     "https://raw.githubusercontent.com/tbrugz/geodata-br/master/geojson/geojs-27-mun.json",
@@ -236,7 +251,7 @@ _FONTES_MALHA = (
 def codigo_da_feicao(feicao: dict) -> int | None:
     """Código IBGE de um polígono, aceitando os nomes de campo das duas fontes."""
     p = feicao.get("properties", {})
-    for chave in ("codarea", "id", "CD_MUN", "cod"):
+    for chave in ("codigo_ibge", "codarea", "id", "CD_MUN", "cod"):
         if p.get(chave):
             try:
                 return int(str(p[chave])[:7])
@@ -245,9 +260,15 @@ def codigo_da_feicao(feicao: dict) -> int | None:
     return None
 
 
+# Malha guardada no repositório (gerada por scripts/baixar_malha.py): é a primeira opção.
+ARQUIVO_MALHA = Path(__file__).resolve().parents[1] / "data" / "malha_municipios_al.geojson"
+
+
 def carregar_malha(timeout: float = 30) -> dict | None:
-    """Malha municipal de Alagoas (GeoJSON). Tenta o IBGE e depois uma cópia pública."""
-    for url in _FONTES_MALHA:
+    """Malha municipal de Alagoas (GeoJSON): arquivo local; se não houver, IBGE ou cópia pública."""
+    if ARQUIVO_MALHA.exists():
+        return json.loads(ARQUIVO_MALHA.read_text(encoding="utf-8"))
+    for url in FONTES_MALHA:
         try:
             resp = requests.get(url, timeout=timeout)
             if resp.ok:

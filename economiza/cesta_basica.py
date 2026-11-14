@@ -48,6 +48,10 @@ class ItemCesta:
     fatores_kg_para_dz: dict[str, float] = field(default_factory=dict)  # só banana
     # Termos de busca enviados à API junto com o NCM (a API não aceita pesquisar só pelo NCM).
     termos: tuple[str, ...] = ()
+    # Peso de uma unidade, para itens vendidos "por unidade" sem peso na descrição (pão francês).
+    peso_unitario_kg: float | None = None
+    # Aceita número sem unidade como gramas (ex.: "CAFE SANTA CLARA 250"), se for um peso comum.
+    gramas_implicitas: tuple[int, ...] = ()
 
 
 # Região 2 do Decreto-Lei 399/1938 (inclui Alagoas). Ordem igual à tabela do DIEESE.
@@ -57,7 +61,8 @@ ITENS_REGIAO_2: tuple[ItemCesta, ...] = (
               exige=r"PATINHO|\bCO?X(AO|\.)? ?(MOLE|DURO)|\bCHA (DE )?(DENTRO|FORA)",
               termos=("PATINHO", "COXAO", "CHA")),
     ItemCesta("Leite", ("04012010",), 6.0, "L", "6,0 L", "Leite integral UHT",
-              exige=r"INTEGRAL", proibe=r"SEMI|DESNAT|\bPO\b|CONDENS|FERMENT|ACHOC",
+              exige=r"INTEGRAL|\bINT\b|\bUHT\b|LONGA VIDA",
+              proibe=r"SEMI|DESNAT|\bPO\b|CONDENS|FERMENT|ACHOC|COMPOSTO|BEBIDA",
               termos=("LEITE",)),
     ItemCesta("Feijão", ("07133399", "07133319"), 4.5, "kg", "4,5 kg", "Feijão carioca",
               exige=r"CARIOC",
@@ -74,22 +79,29 @@ ITENS_REGIAO_2: tuple[ItemCesta, ...] = (
               termos=("TOMATE",)),
     ItemCesta("Pão francês", ("19059090",), 6.0, "kg", "6,0 kg", "Pão francês (carioquinha)",
               exige=r"\bPAO\b.*(FRANC|CARIOQ|\bSAL\b)|CARIOQUINHA",
+              proibe=r"INTEGRAL|TORRADA|\bMINI\b|PRE ?ASSAD|RECHE|DOCE|BRIOCHE|QUEIJO|SABORIZ|CONGELAD",
+              peso_unitario_kg=0.05,  # pão francês padrão: 50 g
               termos=("PAO",)),
     ItemCesta("Café em pó", ("09012100",), 0.3, "kg", "300 g", "Café torrado e moído",
-              proibe=r"GRAO|CAPSULA|SACHE|DESCAF|SOLUVEL",
+              proibe=r"GRAO|CAPS|SACHE|DESCAF|SOLUVEL|DOLCE|GUSTO|NESCAFE|CAPPUC|\bPO\b SOLUV",
+              gramas_implicitas=(250, 500, 1000),
               termos=("CAFE",)),
     ItemCesta("Banana", ("08039000",), 7.5, "dz", "90 unid (7,5 dz)", "Banana prata ou nanica",
-              exige=r"PRATA|NANICA|CATURRA|D.?AGUA",
-              fatores_kg_para_dz={"PRATA": 1.2, "NANICA": 1.8, "CATURRA": 1.8, "AGUA": 1.8},
+              exige=r"PRATA|PACOVAN|NANICA|CATURRA|D.?AGUA",
+              proibe=r"PASSA|DOCE|CHIPS|PALMA|CACHO|MACA|TERRA|COMPRIDA|DESIDRAT",
+              # pacovan é uma variedade de banana prata
+              fatores_kg_para_dz={"PRATA": 1.2, "PACOVAN": 1.2, "NANICA": 1.8, "CATURRA": 1.8, "AGUA": 1.8},
               termos=("BANANA",)),
     ItemCesta("Açúcar", ("17019900", "17011400"), 3.0, "kg", "3,0 kg", "Açúcar cristal",
-              exige=r"CRISTAL",
+              proibe=r"DEMERARA|MASCAVO|REFIN|CONFEIT|LIGHT|DIET|SACHE|GLAC|LIQUID|MELADO|STEVIA|ADOC|"
+                     r"VEGAN|IMPALPAVEL|CUBO",
               termos=("ACUCAR",)),
     ItemCesta("Óleo", ("15079011",), round(0.75 / DENSIDADE_OLEO, 3), "L", "750 g (≈ 0,815 L)",
               "Óleo de soja refinado", exige=r"SOJA",
               termos=("OLEO",)),
     ItemCesta("Manteiga", ("04051000",), 0.75, "kg", "750 g", "Manteiga",
               proibe=r"MARGARINA|GARRAFA|CACAU|AMENDOIM",
+              gramas_implicitas=(200, 500),
               termos=("MANTEIGA",)),
 )
 ITENS_POR_NOME = {i.nome: i for i in ITENS_REGIAO_2}
@@ -119,6 +131,12 @@ _NUM = r"(\d+(?:[.,]\d+)?)"
 _RE_TAMANHO = re.compile(_NUM + r"\s*(" + "|".join(sorted(_UNIDADES, key=len, reverse=True)) + r")\b")
 _RE_MULTI = re.compile(r"(\d+)\s*[X\*]\s*" + _NUM + r"\s*(" + "|".join(sorted(_UNIDADES, key=len, reverse=True)) + r")\b")
 _RE_CAIXA = re.compile(r"\b(?:C/|CX\s*C/?|COM)\s*(\d+)\s*(?:UN|UND|UNID)?\b")
+def normalizar_unidade(unidade_medida: str | None) -> str:
+    """'KG0001', 'KG9', 'Kg' -> 'KG'; 'UN0001', 'UND9' -> 'UND' (só as letras)."""
+    return re.sub(r"[^A-Z]", "", normalizar(unidade_medida))
+
+
+_POR_UNIDADE = {"UN", "UND", "UNID", "UNIDADE", "PC", "PCT"}
 _UNIDADES_GRANEL = {"KG": "kg", "KGS": "kg", "KILO": "kg", "QUILO": "kg", "L": "L", "LT": "L", "LTS": "L", "DZ": "dz", "DUZIA": "dz"}
 
 
@@ -167,8 +185,9 @@ def preco_unidade_base(item: ItemCesta, descricao: str, unidade_medida: str | No
     if pd.isna(preco) or preco <= 0:
         return None, "sem preço"
     d = normalizar(descricao)
-    um = normalizar(unidade_medida)
+    um = normalizar_unidade(unidade_medida)
     granel = _UNIDADES_GRANEL.get(um)
+    tamanho = tamanho_embalagem(d)
 
     if item.unidade == "dz":  # banana
         if granel == "dz" or re.search(r"\bDZ\b|DUZIA", d):
@@ -178,11 +197,18 @@ def preco_unidade_base(item: ItemCesta, descricao: str, unidade_medida: str | No
             if fator is None:
                 return None, "banana sem tipo (prata/nanica)"
             return preco * fator, "ok"
+        if (um in _POR_UNIDADE or re.search(r"\bUN(D|ID|IDADE)?\b", d)) and tamanho is None:
+            return preco * 12, "ok"  # vendida por unidade: uma dúzia = 12 unidades
         return None, "unidade de venda desconhecida"
 
     if granel == item.unidade:  # vendido a granel: o preço já é por kg ou por litro
         return preco, "ok"
-    tamanho = tamanho_embalagem(d)
+    if tamanho is None and item.peso_unitario_kg and um in _POR_UNIDADE and not re.search(r"\bKG\b", d):
+        return preco / item.peso_unitario_kg, "ok"  # ex.: pão francês por unidade (50 g)
+    if tamanho is None and item.gramas_implicitas:
+        numero = re.search(r"\b(\d{3,4})\s*$", d)
+        if numero and int(numero.group(1)) in item.gramas_implicitas:
+            tamanho = (int(numero.group(1)) / 1000, "kg")
     if tamanho is None:
         return None, "tamanho da embalagem não encontrado"
     quantidade, unidade = tamanho
@@ -248,6 +274,8 @@ def classificar_ofertas(df: pd.DataFrame, itens: dict | None = None) -> pd.DataF
 def precos_por_estabelecimento(ofertas: pd.DataFrame, itens: list[str]) -> pd.DataFrame:
     """Menor, mediano e maior preço-base de cada item em cada estabelecimento."""
     validas = ofertas[(ofertas["motivo"] == "ok") & ofertas["item"].isin(itens)]
+    # Parquet devolve colunas categóricas; texto simples evita erros no agrupamento.
+    validas = validas.assign(item=validas["item"].astype(str), cnpj=validas["cnpj"].astype(str))
     return (
         validas.groupby(["cnpj", "item"])
         .agg(preco_min=("preco_base", "min"), preco_mediano=("preco_base", "median"),

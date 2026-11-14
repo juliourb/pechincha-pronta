@@ -54,6 +54,26 @@ Os códigos NCM foram conferidos na Tabela NCM vigente (`data/Tabela_NCM_Vigente
 
 A aba **Diagnóstico** do app mostra cada oferta e o motivo de ter sido aceita ou descartada.
 
+### Decisões tomadas a partir dos dados reais (1ª coleta, nov/2026)
+
+A primeira coleta estadual (58.642 ofertas) mostrou como as notas fiscais descrevem os produtos.
+As regras foram ajustadas assim:
+
+| Situação encontrada | Decisão |
+|---|---|
+| Unidade com sufixo (`KG0001`, `KG9`, `UN0001`) | Considera só as letras: `KG0001` = quilo. Isso recuperou carnes e pães vendidos por kg |
+| Leite com "INT" ou só "UHT", sem o tipo | Aceito como integral (o UHT sem indicação é o integral; semi e desnatado vêm escritos) |
+| Açúcar sem tipo ("ACUCAR CORURIPE 1KG") | Aceito como cristal; demerara, mascavo e refinado continuam excluídos por nome |
+| Banana pacovan | Aceita como prata (pacovan é uma variedade da prata); fator 1,2 |
+| Banana vendida por unidade | Dúzia = 12 × preço da unidade |
+| Pão francês vendido por unidade, sem peso | Peso padrão de 50 g por pão (R$/kg = preço ÷ 0,05) |
+| Café ou manteiga com peso sem unidade ("CAFE SANTA CLARA 250") | Número final de 250, 500 ou 1000 (café) ou 200 e 500 (manteiga) é lido como gramas |
+| Cápsulas e solúvel (Dolce Gusto, Nescafé) | Excluídos do café em pó |
+
+Com essas regras, as lojas com a cesta completa passaram de 44 para 57, e a cesta mediana de
+**Maceió ficou em R$ 660,27**, contra **R$ 661,69 do DIEESE** em outubro de 2026, uma
+diferença de 0,2%.
+
 ## 3. Cesta por estabelecimento
 
 Para cada estabelecimento e item, o app calcula o menor, o mediano e o maior preço-base
@@ -119,6 +139,9 @@ Possibilidades de análise com esses arquivos:
   na descrição. Esses casos são descartados por falta de tamanho.
 - **Leite em caixa com 12 unidades** depende de a descrição indicar a quantidade ("C/12" ou
   "12X1L").
+- **Pão francês é o principal gargalo.** Na 1ª coleta, faltava em 156 das lojas com 10 ou
+  mais itens da cesta. Provavelmente parte das padarias de supermercado registra o pão com
+  outro código ou descrição. Retirar o item na página Cesta básica mostra o efeito.
 - **Período.** A API devolve as notas dos últimos *n* dias, então o resultado é
   um retrato do período, não um índice mensal.
 
