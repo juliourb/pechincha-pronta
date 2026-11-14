@@ -23,7 +23,7 @@ def test_arquivos_e_manifesto(pasta):
     for nome in ("ofertas.parquet", "lojas.parquet", "municipios.parquet", "precos.parquet", "manifesto.json", "coletas.json", "resumo.md"):
         assert (pasta / nome).exists(), nome
     m = json.loads((pasta / "manifesto.json").read_text(encoding="utf-8"))
-    assert m["tag"] == "coleta-2026-11-03" and m["consultas"] == 3 * 16 and m["demo"] is True
+    assert m["tag"] == "coleta-2026-11-03" and m["consultas"] == 3 * 15 and m["demo"] is True
     assert m["arquivos"]["ofertas"]["linhas"] == len(pd.read_parquet(pasta / "ofertas.parquet"))
     assert m["arquivos"]["ofertas"]["bytes"] == (pasta / "ofertas.parquet").stat().st_size
     assert m["estado"]["municipios_com_dados"] == 3
@@ -107,7 +107,7 @@ def test_coleta_envia_o_termo_e_registra_a_mensagem_de_erro():
 
     cliente = ClienteFalso()
     ofertas, falhas = col.baixar_municipio(cliente, 2704302, 10)
-    assert ofertas.empty and len(cliente.chamadas) == 16
+    assert ofertas.empty and len(cliente.chamadas) == 15
     assert all(descricao and not ncm for descricao, ncm in cliente.chamadas)
     assert "HTTP 400" in falhas[0]
 

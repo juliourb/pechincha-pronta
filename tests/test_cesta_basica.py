@@ -152,7 +152,7 @@ def test_fluxo_completo_com_dados_demo():
 
 def test_consultas_so_pelo_termo():
     consultas = cb.consultas_api()
-    assert len(consultas) == 16 and all(termo for _, termo in consultas)
+    assert len(consultas) == 15 and all(termo for _, termo in consultas)
     assert {i for i, _ in consultas} == set(ITENS)
 
 
@@ -183,6 +183,13 @@ def test_consultas_so_pelo_termo():
     ("Carne", "CARNE BV PATINHO", "02102000", "ok"),
     ("Carne", "CARNE BOVINA OSSO DO PATINHO KG", "02013000", "fora da especificação"),
     ("Óleo", "OLEO DE SOJA SIOL 500ML", "15071000", "ok"),
+    # falsos positivos vistos na 2ª sondagem
+    ("Arroz", "ARROZ P CAES BOBY 5KG", "10064000", "fora da especificação"),
+    ("Arroz", "ARROZ INT OLIM 1KG", "10063011", "fora da especificação"),
+    ("Arroz", "ARROZ BRANCO TIO CHICO 1KG", "10063011", "ok"),
+    ("Café em pó", "CAFE C/LEITE MARATA 200G", "21011200", "fora da especificação"),
+    ("Café em pó", "CAFE TM 3C DECAF VAC 250G", "09012200", "fora da especificação"),
+    ("Manteiga", "Manteiga De Coco C Sal Qualicoco 200g", "15171000", "fora da especificação"),
 ])
 def test_avaliar_descricao(item, descricao, ncm, esperado):
     assert cb.avaliar_descricao(cb.ITENS_POR_NOME[item], descricao, ncm) == esperado

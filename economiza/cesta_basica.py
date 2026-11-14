@@ -82,7 +82,8 @@ ITENS_REGIAO_2: tuple[ItemCesta, ...] = (
     ItemCesta("Arroz", ("10063021",), 3.6, "kg", "3,6 kg",
               "Arroz agulhinha tipo 1 (branco, não parboilizado)",
               palavra=r"ARROZ\b",
-              proibe=r"PARB|INTEGRAL|ARBORIO|JAPON|CATETO|NEGRO|VERMELHO|7 GRAOS|DOCE|PRONTO|TEMPERAD|RISOTO",
+              proibe=r"PARB|INTEGRAL|\bINT\b|ARBORIO|JAPON|CATETO|NEGRO|VERMELHO|7 GRAOS|DOCE|PRONTO|TEMPERAD|"
+                     r"RISOTO|CAES|\bCAO\b|CACHORRO|GATO|\bPET\b|BOBY|AMIGACO|ARROZCAO|QUIRERA|QUEBRADO",
               termos=("ARROZ",)),
     ItemCesta("Farinha", ("11062000",), 3.0, "kg", "3,0 kg", "Farinha de mandioca",
               palavra=r"FARI(NHA)?\b",
@@ -98,11 +99,11 @@ ITENS_REGIAO_2: tuple[ItemCesta, ...] = (
               palavra=r"PAO\b", exige=r"FRANC|CARIOQ|\bSAL\b",
               proibe=r"INTEGRAL|TORRADA|\bMINI\b|PRE ?ASSAD|RECHE|DOCE|BRIOCHE|QUEIJO|SABORIZ|CONGELAD",
               peso_unitario_kg=0.05,  # pão francês padrão: 50 g
-              termos=("PAO FRANCES", "PAO CARIOQUINHA")),
+              termos=("PAO FRANCES",)),
     ItemCesta("Café em pó", ("09012100",), 0.3, "kg", "300 g", "Café torrado e moído",
               palavra=r"CAFE?\b",
               proibe=r"GRAO|^CAPS?\b|\bCAPS\b|CAPSULA|SACHE|DESCAF|SOLUV|\bSOL\b|DOLCE|GUSTO|NESCAFE|CAPP|C LEITE|"
-                     r"COM LEITE|\bREFIL\b|GRANUL|\bGRAN\b|EXPRESSO|DRIP|GELADO|PRONTO",
+                     r"COM LEITE|C ?/? ?LEIT|\bDESC\b|DECAF|\bREFIL\b|GRANUL|\bGRAN\b|EXPRESSO|DRIP|GELADO|PRONTO",
               gramas_implicitas=(250, 500, 1000),
               termos=("CAFE",)),
     ItemCesta("Banana", ("08039000", "08031000"), 7.5, "dz", "90 unid (7,5 dz)", "Banana prata ou nanica",
@@ -122,7 +123,8 @@ ITENS_REGIAO_2: tuple[ItemCesta, ...] = (
               termos=("OLEO SOJA",)),
     ItemCesta("Manteiga", ("04051000",), 0.75, "kg", "750 g", "Manteiga",
               palavra=r"MANT(EIGA)?\b",
-              proibe=r"MARGARINA|GARRAFA|CACAU|AMENDOIM|KARITE|CORPORAL|GHEE|BISC|\bBASE\b|\bALIM",
+              proibe=r"MARGARINA|GARRAFA|CACAU|AMENDOIM|KARITE|CORPORAL|GHEE|BISC|\bBASE\b|\bALIM|COCO|"
+                     r"\bVEG|SABOR|ERVAS",
               gramas_implicitas=(200, 500),
               termos=("MANTEIGA",)),
 )

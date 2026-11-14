@@ -68,7 +68,7 @@ if consultar:
 
 if "cesta_basica" not in st.session_state:
     st.info("Escolha o município e clique em **Calcular a cesta**. A consulta faz uma busca por "
-            "termo de cada item (16 consultas) e pode levar cerca de um minuto.")
+            "termo de cada item (15 consultas) e pode levar cerca de um minuto.")
     rodape()
     st.stop()
 
